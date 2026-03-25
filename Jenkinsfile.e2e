@@ -2,9 +2,9 @@ pipeline {
     agent any
 
     environment {
-        REGISTRY          = 'registry.ny.secl.io/overbearer'
-        IMAGE_TAG         = "e2e-${env.BUILD_NUMBER}"
-        E2E_NS            = 'overbearer-e2e'
+        REGISTRY           = 'registry.ny.secl.io/overbearer'
+        IMAGE_TAG          = "e2e-${env.BUILD_NUMBER}"
+        E2E_NS             = 'overbearer-e2e'
         DOCKER_API_VERSION = '1.43'
     }
 
@@ -26,25 +26,33 @@ pipeline {
 
         stage('Deploy E2E Environment') {
             steps {
-                sh "docker run --rm --net=host -v \$HOME/.kube:/root/.kube ${REGISTRY}/e2e:${IMAGE_TAG} ${E2E_NS} ${REGISTRY} ${IMAGE_TAG} setup"
+                withCredentials([file(credentialsId: 'KUBECONFIG', variable: 'KUBECONFIG_FILE')]) {
+                    sh "docker run --rm --net=host -v \${KUBECONFIG_FILE}:/root/.kube/config:ro ${REGISTRY}/e2e:${IMAGE_TAG} ${E2E_NS} ${REGISTRY} ${IMAGE_TAG} setup"
+                }
             }
         }
 
         stage('API Tests') {
             steps {
-                sh "docker run --rm --net=host -v \$HOME/.kube:/root/.kube ${REGISTRY}/e2e:${IMAGE_TAG} ${E2E_NS} ${REGISTRY} ${IMAGE_TAG} api"
+                withCredentials([file(credentialsId: 'KUBECONFIG', variable: 'KUBECONFIG_FILE')]) {
+                    sh "docker run --rm --net=host -v \${KUBECONFIG_FILE}:/root/.kube/config:ro ${REGISTRY}/e2e:${IMAGE_TAG} ${E2E_NS} ${REGISTRY} ${IMAGE_TAG} api"
+                }
             }
         }
 
         stage('Proxy Tests') {
             steps {
-                sh "docker run --rm --net=host -v \$HOME/.kube:/root/.kube ${REGISTRY}/e2e:${IMAGE_TAG} ${E2E_NS} ${REGISTRY} ${IMAGE_TAG} proxy"
+                withCredentials([file(credentialsId: 'KUBECONFIG', variable: 'KUBECONFIG_FILE')]) {
+                    sh "docker run --rm --net=host -v \${KUBECONFIG_FILE}:/root/.kube/config:ro ${REGISTRY}/e2e:${IMAGE_TAG} ${E2E_NS} ${REGISTRY} ${IMAGE_TAG} proxy"
+                }
             }
         }
 
         stage('UI Tests') {
             steps {
-                sh "docker run --rm --net=host -v \$HOME/.kube:/root/.kube ${REGISTRY}/e2e:${IMAGE_TAG} ${E2E_NS} ${REGISTRY} ${IMAGE_TAG} ui"
+                withCredentials([file(credentialsId: 'KUBECONFIG', variable: 'KUBECONFIG_FILE')]) {
+                    sh "docker run --rm --net=host -v \${KUBECONFIG_FILE}:/root/.kube/config:ro ${REGISTRY}/e2e:${IMAGE_TAG} ${E2E_NS} ${REGISTRY} ${IMAGE_TAG} ui"
+                }
             }
         }
     }
@@ -52,7 +60,9 @@ pipeline {
     post {
         always {
             echo 'Cleaning up E2E environment...'
-            sh "docker run --rm --net=host -v \$HOME/.kube:/root/.kube ${REGISTRY}/e2e:${IMAGE_TAG} ${E2E_NS} ${REGISTRY} ${IMAGE_TAG} cleanup || true"
+            withCredentials([file(credentialsId: 'KUBECONFIG', variable: 'KUBECONFIG_FILE')]) {
+                sh "docker run --rm --net=host -v \${KUBECONFIG_FILE}:/root/.kube/config:ro ${REGISTRY}/e2e:${IMAGE_TAG} ${E2E_NS} ${REGISTRY} ${IMAGE_TAG} cleanup || true"
+            }
             sh "docker rmi ${REGISTRY}/proxy:${IMAGE_TAG} ${REGISTRY}/management:${IMAGE_TAG} ${REGISTRY}/e2e:${IMAGE_TAG} || true"
         }
         failure {
