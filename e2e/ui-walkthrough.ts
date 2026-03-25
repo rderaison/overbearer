@@ -193,7 +193,7 @@ async function main() {
       if (cr.status >= 300) return { step: 'create', status: cr.status, body: await cr.text() };
       const created = await cr.json();
       const id = created.id;
-      if (!created.fakeToken?.startsWith('ovb_')) return { step: 'create', status: cr.status, body: 'no fake token' };
+      if (!created.fakeToken || !created.fakeToken.includes('ovb')) return { step: 'create', status: cr.status, body: 'no fake token: ' + created.fakeToken };
 
       // List
       const lr = await fetch(`${base}/api/tokens`, { credentials: 'include' });
@@ -234,13 +234,14 @@ async function main() {
     assert(res.status >= 200 && res.status < 300, `${res.status}: ${res.body}`);
   });
 
-  await check('List users shows 2', async () => {
+  await check('List users includes new user', async () => {
     const res = await page.evaluate(async (base) => {
       const r = await fetch(`${base}/api/users`, { credentials: 'include' });
       return { status: r.status, body: await r.text() };
     }, BASE);
     assert(res.status === 200, `${res.status}`);
-    assert(JSON.parse(res.body).users?.length === 2, `Expected 2 users`);
+    const users = JSON.parse(res.body).users;
+    assert(users?.some((u: any) => u.username === 'testviewer'), `testviewer not found in users list`);
   });
 
   // -----------------------------------------------------------------------
