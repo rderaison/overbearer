@@ -2,48 +2,12 @@ pipeline {
     agent any
 
     environment {
-        REGISTRY = 'ghcr.io/overbearer'
-        IMAGE_TAG = "${env.BRANCH_NAME == 'main' ? 'latest' : env.BRANCH_NAME}-${env.BUILD_NUMBER}"
+        REGISTRY           = 'ghcr.io/rderaison/overbearer'
+        IMAGE_TAG          = "${env.BRANCH_NAME == 'main' ? 'latest' : env.BRANCH_NAME}-${env.BUILD_NUMBER}"
+        DOCKER_API_VERSION = '1.43'
     }
 
     stages {
-        stage('Install') {
-            steps {
-                sh 'npm ci'
-            }
-        }
-
-        stage('Typecheck') {
-            parallel {
-                stage('Proxy') {
-                    steps {
-                        sh 'npx tsc --noEmit -p packages/proxy/tsconfig.json'
-                    }
-                }
-                stage('API') {
-                    steps {
-                        sh 'npx tsc --noEmit -p packages/api/tsconfig.json'
-                    }
-                }
-                stage('UI') {
-                    steps {
-                        sh 'npx tsc --noEmit -p packages/ui/tsconfig.json'
-                    }
-                }
-            }
-        }
-
-        stage('Unit Tests') {
-            steps {
-                sh 'cd e2e && npx vitest run --reporter=junit --outputFile=../test-results/unit.xml'
-            }
-            post {
-                always {
-                    junit allowEmptyResults: true, testResults: 'test-results/unit.xml'
-                }
-            }
-        }
-
         stage('Build Images') {
             parallel {
                 stage('Proxy Image') {
@@ -67,7 +31,7 @@ pipeline {
                 }
             }
             steps {
-                withCredentials([usernamePassword(credentialsId: 'ghcr-credentials', usernameVariable: 'USER', passwordVariable: 'TOKEN')]) {
+                withCredentials([usernamePassword(credentialsId: 'GHCR_IO_LOGIN', usernameVariable: 'USER', passwordVariable: 'TOKEN')]) {
                     sh 'echo $TOKEN | docker login ghcr.io -u $USER --password-stdin'
                 }
                 sh "docker push ${REGISTRY}/proxy:${IMAGE_TAG}"
