@@ -9,6 +9,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm kubectl \
     && rm -rf /var/lib/apt/lists/*
 
+ENV KUBECONFIG=/root/.kube/config
+
 WORKDIR /e2e
 
 COPY e2e/package.json ./
