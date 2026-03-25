@@ -22,14 +22,10 @@ pipeline {
             steps {
                 withCredentials([file(credentialsId: 'KUBECONFIG', variable: 'KUBECONFIG_FILE')]) {
                     sh '''
-                        echo "DEBUG: credential path: $KUBECONFIG_FILE"
-                        ls -la "$KUBECONFIG_FILE"
-                        file "$KUBECONFIG_FILE"
                         mkdir -p "$WORKSPACE/.kube"
                         cat "$KUBECONFIG_FILE" > "$WORKSPACE/.kube/config"
-                        echo "DEBUG: copied config:"
                         ls -la "$WORKSPACE/.kube/config"
-                        head -5 "$WORKSPACE/.kube/config"
+                        md5sum "$WORKSPACE/.kube/config"
                     '''
                 }
             }

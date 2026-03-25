@@ -7,9 +7,8 @@
 #
 set -euo pipefail
 
-echo "DEBUG: KUBECONFIG=${KUBECONFIG:-unset}, HOME=${HOME:-unset}"
-echo "DEBUG: $(ls -la /root/.kube/ 2>&1 || echo '/root/.kube not found')"
-kubectl config current-context 2>&1 || echo "DEBUG: kubectl cannot read config"
+ls -la /root/.kube/config 2>&1 || echo "DEBUG: /root/.kube/config not found"
+md5sum /root/.kube/config 2>&1 || true
 
 NS="${1:?Usage: $0 <namespace> <registry> <tag> <category>}"
 REGISTRY="${2:?}"
