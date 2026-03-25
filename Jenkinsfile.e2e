@@ -1,5 +1,5 @@
 def e2eRun(String args) {
-    sh "docker run --rm --net=host -v ${WORKSPACE}/.kube:/root/.kube:ro ${REGISTRY}/e2e:${IMAGE_TAG} ${args}"
+    sh "docker run --rm --net=host -e KUBECONFIG_B64 ${REGISTRY}/e2e:${IMAGE_TAG} ${args}"
 }
 
 pipeline {
@@ -21,12 +21,9 @@ pipeline {
         stage('Prepare') {
             steps {
                 withCredentials([file(credentialsId: 'KUBECONFIG', variable: 'KUBECONFIG_FILE')]) {
-                    sh '''
-                        mkdir -p "$WORKSPACE/.kube"
-                        cat "$KUBECONFIG_FILE" > "$WORKSPACE/.kube/config"
-                        ls -la "$WORKSPACE/.kube/config"
-                        md5sum "$WORKSPACE/.kube/config"
-                    '''
+                    script {
+                        env.KUBECONFIG_B64 = sh(script: 'base64 -w0 "$KUBECONFIG_FILE"', returnStdout: true).trim()
+                    }
                 }
             }
         }
@@ -72,7 +69,6 @@ pipeline {
             script {
                 try { e2eRun("${E2E_NS} ${REGISTRY} ${IMAGE_TAG} cleanup") } catch (e) { echo "Cleanup failed: ${e}" }
             }
-            sh "rm -rf ${WORKSPACE}/.kube"
             sh "docker rmi ${REGISTRY}/proxy:${IMAGE_TAG} ${REGISTRY}/management:${IMAGE_TAG} ${REGISTRY}/e2e:${IMAGE_TAG} || true"
         }
         failure {

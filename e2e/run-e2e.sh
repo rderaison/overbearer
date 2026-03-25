@@ -7,8 +7,11 @@
 #
 set -euo pipefail
 
-ls -la /root/.kube/config 2>&1 || echo "DEBUG: /root/.kube/config not found"
-md5sum /root/.kube/config 2>&1 || true
+if [ -n "${KUBECONFIG_B64:-}" ]; then
+  mkdir -p /root/.kube
+  echo "$KUBECONFIG_B64" | base64 -d > /root/.kube/config
+  export KUBECONFIG=/root/.kube/config
+fi
 
 NS="${1:?Usage: $0 <namespace> <registry> <tag> <category>}"
 REGISTRY="${2:?}"
