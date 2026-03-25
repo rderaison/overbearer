@@ -4,10 +4,21 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
       curl \
       python3 \
       openssl \
+      chromium \
+      fonts-liberation \
+      libatk-bridge2.0-0 \
+      libdrm2 \
+      libgbm1 \
+      libnss3 \
+      libxkbcommon0 \
+      xdg-utils \
     && curl -LO "https://dl.k8s.io/release/$(curl -Ls https://dl.k8s.io/release/stable.txt)/bin/linux/arm64/kubectl" \
     && install -m 0755 kubectl /usr/local/bin/kubectl \
     && rm kubectl \
     && rm -rf /var/lib/apt/lists/*
+
+ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true \
+    PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium
 
 WORKDIR /e2e
 
