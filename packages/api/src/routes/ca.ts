@@ -20,7 +20,6 @@ export default async function caRoutes(fastify: FastifyInstance): Promise<void> 
    */
   fastify.get(
     '/api/ca',
-    { preHandler: requireAuth() },
     async (_request: FastifyRequest, reply: FastifyReply) => {
       const result = await query<CaCertRow>(
         `SELECT id, cert_pem, expires_at, created_at
