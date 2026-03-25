@@ -15,9 +15,9 @@ pipeline {
     stages {
         stage('Build Images') {
             steps {
-                sh 'npm ci'
                 sh "docker build -f Dockerfile.proxy -t ${REGISTRY}/proxy:${IMAGE_TAG} ."
                 sh "docker build -f Dockerfile.api -t ${REGISTRY}/management:${IMAGE_TAG} ."
+                sh "docker build -f Dockerfile.e2e -t ${REGISTRY}/e2e:${IMAGE_TAG} ."
                 sh "docker push ${REGISTRY}/proxy:${IMAGE_TAG}"
                 sh "docker push ${REGISTRY}/management:${IMAGE_TAG}"
             }
@@ -25,27 +25,25 @@ pipeline {
 
         stage('Deploy E2E Environment') {
             steps {
-                sh "bash e2e/run-e2e.sh ${E2E_NS} ${REGISTRY} ${IMAGE_TAG} setup"
+                sh "docker run --rm --net=host -v \$HOME/.kube:/root/.kube ${REGISTRY}/e2e:${IMAGE_TAG} ${E2E_NS} ${REGISTRY} ${IMAGE_TAG} setup"
             }
         }
 
-        stage('E2E Tests') {
+        stage('API Tests') {
             steps {
-                withCredentials([
-                    file(credentialsId: 'kubectl-binary', variable: 'KUBECTL_BIN'),
-                    file(credentialsId: 'e2e-kubeconfig', variable: 'KUBECONFIG_FILE')
-                ]) {
-                    script {
-                        docker.image('node:latest').inside() {
-                            sh 'install -m 0755 "$KUBECTL_BIN" /usr/local/bin/kubectl'
-                            sh 'mkdir -p ~/.kube && cp "$KUBECONFIG_FILE" ~/.kube/config'
-                            sh 'npm ci --prefix e2e'
-                            sh "bash e2e/run-e2e.sh ${E2E_NS} ${REGISTRY} ${IMAGE_TAG} api"
-                            sh "bash e2e/run-e2e.sh ${E2E_NS} ${REGISTRY} ${IMAGE_TAG} proxy"
-                            sh "bash e2e/run-e2e.sh ${E2E_NS} ${REGISTRY} ${IMAGE_TAG} ui"
-                        }
-                    }
-                }
+                sh "docker run --rm --net=host -v \$HOME/.kube:/root/.kube ${REGISTRY}/e2e:${IMAGE_TAG} ${E2E_NS} ${REGISTRY} ${IMAGE_TAG} api"
+            }
+        }
+
+        stage('Proxy Tests') {
+            steps {
+                sh "docker run --rm --net=host -v \$HOME/.kube:/root/.kube ${REGISTRY}/e2e:${IMAGE_TAG} ${E2E_NS} ${REGISTRY} ${IMAGE_TAG} proxy"
+            }
+        }
+
+        stage('UI Tests') {
+            steps {
+                sh "docker run --rm --net=host -v \$HOME/.kube:/root/.kube ${REGISTRY}/e2e:${IMAGE_TAG} ${E2E_NS} ${REGISTRY} ${IMAGE_TAG} ui"
             }
         }
     }
@@ -53,13 +51,11 @@ pipeline {
     post {
         always {
             echo 'Cleaning up E2E environment...'
-            sh "bash e2e/run-e2e.sh ${E2E_NS} ${REGISTRY} ${IMAGE_TAG} cleanup || true"
-            sh "docker rmi ${REGISTRY}/proxy:${IMAGE_TAG} ${REGISTRY}/management:${IMAGE_TAG} || true"
+            sh "docker run --rm --net=host -v \$HOME/.kube:/root/.kube ${REGISTRY}/e2e:${IMAGE_TAG} ${E2E_NS} ${REGISTRY} ${IMAGE_TAG} cleanup || true"
+            sh "docker rmi ${REGISTRY}/proxy:${IMAGE_TAG} ${REGISTRY}/management:${IMAGE_TAG} ${REGISTRY}/e2e:${IMAGE_TAG} || true"
         }
         failure {
             echo 'E2E tests failed!'
-            sh "kubectl -n ${E2E_NS} logs deployment/overbearer-management --tail=50 || true"
-            sh "kubectl -n ${E2E_NS} logs deployment/overbearer-proxy --tail=50 || true"
         }
         success {
             echo 'All E2E tests passed!'

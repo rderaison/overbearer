@@ -1,0 +1,19 @@
+FROM node:latest
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      curl \
+      python3 \
+      openssl \
+    && curl -LO "https://dl.k8s.io/release/$(curl -Ls https://dl.k8s.io/release/stable.txt)/bin/linux/arm64/kubectl" \
+    && install -m 0755 kubectl /usr/local/bin/kubectl \
+    && rm kubectl \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /e2e
+
+COPY e2e/package.json e2e/package-lock.json* ./
+RUN npm ci
+
+COPY e2e/ ./
+
+ENTRYPOINT ["bash", "run-e2e.sh"]
