@@ -545,12 +545,19 @@ ui)
   sleep 3
   trap "kill $PF_PID 2>/dev/null" EXIT
 
-  # Ensure admin exists
-  curl -s -c /tmp/ovb-e2e-cookies -X POST -H "Content-Type: application/json" \
+  # Get an admin session — try setup first, fall back to minting a JWT
+  R=$(curl -s -c /tmp/ovb-e2e-cookies -X POST -H "Content-Type: application/json" \
     -d '{"username":"ui-admin","displayName":"UI Admin"}' \
-    "http://localhost:13000/api/auth/setup" > /dev/null 2>&1 || true
+    "http://localhost:13000/api/auth/setup" 2>&1)
+  if echo "$R" | grep -q "already completed"; then
+    echo "  Setup already done, minting admin JWT..."
+    mint_admin_cookie "http://localhost:13000"
+  fi
 
-  OVERBEARER_URL="http://localhost:13000" npx tsx ui-walkthrough.ts 2>&1
+  # Extract the session token from the cookie jar for Puppeteer
+  SESSION_TOKEN=$(grep overbearer_session /tmp/ovb-e2e-cookies | awk '{print $NF}')
+
+  OVERBEARER_URL="http://localhost:13000" OVERBEARER_SESSION="$SESSION_TOKEN" npx tsx ui-walkthrough.ts 2>&1
   ;;
 
 # ============================================================================

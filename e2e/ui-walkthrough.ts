@@ -44,39 +44,55 @@ async function main() {
   // -----------------------------------------------------------------------
   console.log('--- Setup Flow ---');
 
-  await check('Setup status is true', async () => {
-    const res = await page.evaluate(async (base) => {
-      const r = await fetch(`${base}/api/auth/setup-status`);
-      return r.json();
-    }, BASE);
-    assert(res.needsSetup === true, `needsSetup=${res.needsSetup}`);
-  });
+  const setupStatus = await page.evaluate(async (base) => {
+    const r = await fetch(`${base}/api/auth/setup-status`);
+    return r.json();
+  }, BASE);
 
-  await check('Load page shows setup screen', async () => {
+  if (setupStatus.needsSetup) {
+    await check('Setup status is true', async () => {
+      assert(setupStatus.needsSetup === true, `needsSetup=${setupStatus.needsSetup}`);
+    });
+
+    await check('Load page shows setup screen', async () => {
+      await page.goto(BASE, { waitUntil: 'networkidle2' });
+      await page.waitForSelector('#setup-username', { timeout: 5000 });
+    });
+
+    await check('Create admin account', async () => {
+      await page.type('#setup-username', 'admin');
+      await page.type('#setup-display', 'Test Admin');
+
+      await Promise.all([
+        page.click('button[type="submit"]'),
+        page.waitForFunction(
+          () => document.querySelector('h1')?.textContent === 'Dashboard',
+          { timeout: 10000 },
+        ),
+      ]);
+    });
+
+    await check('Session cookie was set', async () => {
+      const cookies = await page.cookies();
+      const session = cookies.find((c) => c.name === 'overbearer_session');
+      assert(session !== undefined, `No session cookie. Cookies: ${cookies.map((c) => c.name).join(', ')}`);
+    });
+  } else {
+    console.log('  (setup already completed, injecting session cookie)');
+    const sessionToken = process.env.OVERBEARER_SESSION;
+    assert(!!sessionToken, 'OVERBEARER_SESSION env var required when setup already completed');
+
+    const url = new URL(BASE);
+    await page.setCookie({
+      name: 'overbearer_session',
+      value: sessionToken!,
+      domain: url.hostname,
+      path: '/',
+      httpOnly: true,
+    });
+
     await page.goto(BASE, { waitUntil: 'networkidle2' });
-    await page.waitForSelector('#setup-username', { timeout: 5000 });
-  });
-
-  await check('Create admin account', async () => {
-    await page.type('#setup-username', 'admin');
-    await page.type('#setup-display', 'Test Admin');
-
-    // Click submit and wait for navigation/DOM change
-    await Promise.all([
-      page.click('button[type="submit"]'),
-      page.waitForFunction(
-        () => document.querySelector('h1')?.textContent === 'Dashboard',
-        { timeout: 10000 },
-      ),
-    ]);
-  });
-
-  // Debug: check cookies
-  await check('Session cookie was set', async () => {
-    const cookies = await page.cookies();
-    const session = cookies.find((c) => c.name === 'overbearer_session');
-    assert(session !== undefined, `No session cookie. Cookies: ${cookies.map((c) => c.name).join(', ')}`);
-  });
+  }
 
   await check('Auth me works with cookie', async () => {
     const res = await page.evaluate(async (base) => {
