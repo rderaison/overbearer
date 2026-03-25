@@ -52,6 +52,41 @@ get_session() {
     "${API_INTERNAL}/api/auth/setup" > /dev/null 2>&1
 }
 
+# Mint a JWT session cookie for the first admin user using the JWT secret from k8s
+mint_admin_cookie() {
+  local api_url="$1"
+  local jwt_secret
+  jwt_secret=$(kubectl -n "$NS" get secret overbearer-secrets -o jsonpath='{.data.OVERBEARER_JWT_SECRET}' | base64 -d)
+
+  # Get the first admin user ID
+  local admin_id
+  admin_id=$(kubectl -n "$NS" exec deployment/overbearer-management -- \
+    node -e "
+      const { Client } = require('pg');
+      const c = new Client(); c.connect().then(() =>
+        c.query(\"SELECT id FROM users WHERE role='admin' LIMIT 1\")
+      ).then(r => { console.log(r.rows[0].id); c.end(); });
+    " 2>/dev/null || echo "")
+
+  if [ -z "$admin_id" ]; then
+    echo "  WARNING: could not find admin user ID"
+    return 1
+  fi
+
+  # Sign a JWT
+  local token
+  token=$(node --input-type=module -e "
+import { SignJWT } from 'jose';
+const s = new TextEncoder().encode('$jwt_secret');
+const t = await new SignJWT({ userId: '$admin_id', role: 'admin' })
+  .setProtectedHeader({ alg: 'HS256' }).setIssuedAt().setExpirationTime('1h').setIssuer('overbearer').sign(s);
+console.log(t);
+")
+
+  # Write a cookie jar file that curl can use
+  echo -e "localhost\tFALSE\t/\tFALSE\t0\toverbearer_session\t${token}" > /tmp/ovb-e2e-cookies
+}
+
 # ============================================================================
 case "$CATEGORY" in
 
@@ -417,9 +452,13 @@ proxy)
   PROXY="http://localhost:18080"
   trap "kill $PF1 $PF2 2>/dev/null" EXIT
 
-  # Setup admin + CA + token
-  curl -s -c /tmp/ovb-e2e-cookies -X POST -H "Content-Type: application/json" \
-    -d '{"username":"proxy-admin","displayName":"Proxy Admin"}' "$API/api/auth/setup" > /dev/null 2>&1 || true
+  # Get an admin session — try setup first, fall back to minting a JWT directly
+  R=$(curl -s -c /tmp/ovb-e2e-cookies -X POST -H "Content-Type: application/json" \
+    -d '{"username":"proxy-admin","displayName":"Proxy Admin"}' "$API/api/auth/setup" 2>&1)
+  if echo "$R" | grep -q "already completed"; then
+    echo "  Setup already done, minting admin JWT..."
+    mint_admin_cookie "$API"
+  fi
   curl -s -b /tmp/ovb-e2e-cookies -X POST "$API/api/ca/generate" > /dev/null 2>&1 || true
   curl -s "$API/api/ca" > /tmp/ovb-e2e-ca.pem
 
