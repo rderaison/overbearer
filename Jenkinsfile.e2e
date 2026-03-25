@@ -64,7 +64,9 @@ pipeline {
     post {
         always {
             echo 'Cleaning up E2E environment...'
-            script { e2eRun("${E2E_NS} ${REGISTRY} ${IMAGE_TAG} cleanup") }
+            script {
+                try { e2eRun("${E2E_NS} ${REGISTRY} ${IMAGE_TAG} cleanup") } catch (e) { echo "Cleanup failed: ${e}" }
+            }
             sh "rm -rf ${WORKSPACE}/.kube"
             sh "docker rmi ${REGISTRY}/proxy:${IMAGE_TAG} ${REGISTRY}/management:${IMAGE_TAG} ${REGISTRY}/e2e:${IMAGE_TAG} || true"
         }
