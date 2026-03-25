@@ -1,0 +1,71 @@
+pipeline {
+    agent any
+
+    environment {
+        REGISTRY    = 'registry.ny.secl.io/overbearer'
+        IMAGE_TAG   = "e2e-${env.BUILD_NUMBER}"
+        E2E_NS      = 'overbearer-e2e'
+    }
+
+    options {
+        timeout(time: 30, unit: 'MINUTES')
+        timestamps()
+    }
+
+    stages {
+        stage('Build Images') {
+            steps {
+                sh 'npm ci'
+                sh "docker build -f Dockerfile.proxy -t ${REGISTRY}/proxy:${IMAGE_TAG} ."
+                sh "docker build -f Dockerfile.api -t ${REGISTRY}/management:${IMAGE_TAG} ."
+                sh "docker push ${REGISTRY}/proxy:${IMAGE_TAG}"
+                sh "docker push ${REGISTRY}/management:${IMAGE_TAG}"
+            }
+        }
+
+        stage('Deploy E2E Environment') {
+            steps {
+                sh "bash e2e/run-e2e.sh ${E2E_NS} ${REGISTRY} ${IMAGE_TAG} setup"
+            }
+        }
+
+        stage('E2E Tests') {
+            parallel {
+                stage('API Tests') {
+                    steps {
+                        sh "bash e2e/run-e2e.sh ${E2E_NS} ${REGISTRY} ${IMAGE_TAG} api"
+                    }
+                }
+            }
+        }
+
+        stage('Proxy Tests') {
+            steps {
+                sh "bash e2e/run-e2e.sh ${E2E_NS} ${REGISTRY} ${IMAGE_TAG} proxy"
+            }
+        }
+
+        stage('UI Tests') {
+            steps {
+                sh "bash e2e/run-e2e.sh ${E2E_NS} ${REGISTRY} ${IMAGE_TAG} ui"
+            }
+        }
+    }
+
+    post {
+        always {
+            echo 'Cleaning up E2E environment...'
+            sh "bash e2e/run-e2e.sh ${E2E_NS} ${REGISTRY} ${IMAGE_TAG} cleanup || true"
+            sh "docker rmi ${REGISTRY}/proxy:${IMAGE_TAG} ${REGISTRY}/management:${IMAGE_TAG} || true"
+        }
+        failure {
+            echo 'E2E tests failed!'
+            // Dump logs before cleanup for debugging
+            sh "kubectl -n ${E2E_NS} logs deployment/overbearer-management --tail=50 || true"
+            sh "kubectl -n ${E2E_NS} logs deployment/overbearer-proxy --tail=50 || true"
+        }
+        success {
+            echo 'All E2E tests passed!'
+        }
+    }
+}

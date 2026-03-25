@@ -1,0 +1,80 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: overbearer
+      POSTGRES_PASSWORD: overbearer
+      POSTGRES_DB: overbearer
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U overbearer"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  memcached:
+    image: memcached:1.6-alpine
+    command: ["-m", "128", "-c", "1024"]
+    ports:
+      - "11211:11211"
+
+  clickhouse:
+    image: clickhouse/clickhouse-server:26.1-alpine
+    ports:
+      - "8123:8123"
+    volumes:
+      - clickhouse-data:/var/lib/clickhouse
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile.api
+    ports:
+      - "3000:3000"
+      - "3443:3443"
+    environment:
+      PORT: "3000"
+      TLS_PORT: "3443"
+      PGHOST: postgres
+      PGDATABASE: overbearer
+      PGUSER: overbearer
+      PGPASSWORD: overbearer
+      MEMCACHED_HOST: "memcached:11211"
+      CLICKHOUSE_URL: "http://clickhouse:8123"
+      CLICKHOUSE_DATABASE: overbearer
+      OVERBEARER_MASTER_KEY: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+      OVERBEARER_JWT_SECRET: "dev-jwt-secret-do-not-use-in-production"
+      OVERBEARER_RP_ID: "localhost"
+      OVERBEARER_ORIGIN: "http://localhost:5173"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  proxy:
+    build:
+      context: .
+      dockerfile: Dockerfile.proxy
+    ports:
+      - "8080:8080"
+      - "8443:8443"
+    environment:
+      PORT: "8080"
+      TLS_PORT: "8443"
+      MEMCACHED_HOST: "memcached:11211"
+      CLICKHOUSE_URL: "http://clickhouse:8123"
+      CLICKHOUSE_DATABASE: overbearer
+      PGHOST: postgres
+      PGDATABASE: overbearer
+      PGUSER: overbearer
+      PGPASSWORD: overbearer
+      OVERBEARER_MASTER_KEY: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+volumes:
+  postgres-data:
+  clickhouse-data:

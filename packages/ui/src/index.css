@@ -1,0 +1,108 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/*
+ * Smooth dark-mode transitions.
+ * Applied to backgrounds, text, borders, and shadows so the
+ * switch between light and dark feels polished rather than abrupt.
+ */
+*,
+*::before,
+*::after {
+  transition-property: background-color, border-color, color, box-shadow, opacity;
+  transition-duration: 200ms;
+  transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/*
+ * Disable transitions on elements that explicitly opt out.
+ * For example, progress bars, animations, etc.
+ */
+.no-transition,
+.no-transition *,
+.no-transition *::before,
+.no-transition *::after {
+  transition-duration: 0ms !important;
+}
+
+@layer base {
+  body {
+    @apply bg-white text-slate-900 dark:bg-zinc-950 dark:text-zinc-100;
+    font-feature-settings: 'cv02', 'cv03', 'cv04', 'cv11';
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  /* Custom scrollbar styling */
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+
+  ::-webkit-scrollbar-track {
+    @apply bg-transparent;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    @apply bg-slate-300 dark:bg-zinc-700 rounded-full;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    @apply bg-slate-400 dark:bg-zinc-600;
+  }
+}
+
+@layer components {
+  .card {
+    @apply bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 rounded-xl shadow-sm;
+  }
+
+  .input {
+    @apply w-full rounded-lg border border-slate-300 dark:border-zinc-700
+           bg-white dark:bg-zinc-800 px-3 py-2 text-sm
+           text-slate-900 dark:text-zinc-100
+           placeholder:text-slate-400 dark:placeholder:text-zinc-500
+           focus:outline-none focus:ring-2 focus:ring-brand-500/40 focus:border-brand-500
+           disabled:cursor-not-allowed disabled:opacity-50;
+  }
+
+  .btn-primary {
+    @apply inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm font-medium
+           bg-brand-600 text-white hover:bg-brand-700 active:bg-brand-800
+           focus:outline-none focus:ring-2 focus:ring-brand-500/40 focus:ring-offset-2
+           dark:focus:ring-offset-zinc-900
+           disabled:opacity-50 disabled:cursor-not-allowed;
+  }
+
+  .btn-secondary {
+    @apply inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm font-medium
+           border border-slate-300 dark:border-zinc-700
+           bg-white dark:bg-zinc-800
+           text-slate-700 dark:text-zinc-300
+           hover:bg-slate-50 dark:hover:bg-zinc-700 active:bg-slate-100
+           focus:outline-none focus:ring-2 focus:ring-brand-500/40 focus:ring-offset-2
+           dark:focus:ring-offset-zinc-900
+           disabled:opacity-50 disabled:cursor-not-allowed;
+  }
+
+  .btn-danger {
+    @apply inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm font-medium
+           bg-red-600 text-white hover:bg-red-700 active:bg-red-800
+           focus:outline-none focus:ring-2 focus:ring-red-500/40 focus:ring-offset-2
+           dark:focus:ring-offset-zinc-900
+           disabled:opacity-50 disabled:cursor-not-allowed;
+  }
+
+  .btn-ghost {
+    @apply inline-flex items-center justify-center gap-2 rounded-lg px-3 py-2 text-sm font-medium
+           text-slate-600 dark:text-zinc-400
+           hover:bg-slate-100 dark:hover:bg-zinc-800 active:bg-slate-200
+           focus:outline-none focus:ring-2 focus:ring-brand-500/40
+           disabled:opacity-50 disabled:cursor-not-allowed;
+  }
+
+  .label {
+    @apply block text-sm font-medium text-slate-700 dark:text-zinc-300 mb-1.5;
+  }
+}
