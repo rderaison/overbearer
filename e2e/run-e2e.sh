@@ -79,6 +79,13 @@ setup)
     --from-literal=POSTGRES_DB=overbearer \
     --dry-run=client -o yaml | kubectl apply -f -
 
+  if [ -n "${DOCKER_CONFIG_B64:-}" ]; then
+    echo "  Creating registry pull secret..."
+    kubectl -n "$NS" create secret docker-registry registry-creds \
+      --from-file=.dockerconfigjson=<(echo "$DOCKER_CONFIG_B64" | base64 -d) \
+      --dry-run=client -o yaml | kubectl apply -f -
+  fi
+
   echo "  Deploying infrastructure..."
 
   # PostgreSQL
@@ -220,6 +227,8 @@ spec:
   template:
     metadata: { labels: { app: overbearer-management } }
     spec:
+      imagePullSecrets:
+        - name: registry-creds
       containers:
         - name: management
           image: ${REGISTRY}/management:${TAG}
@@ -261,6 +270,8 @@ spec:
   template:
     metadata: { labels: { app: overbearer-proxy } }
     spec:
+      imagePullSecrets:
+        - name: registry-creds
       serviceAccountName: overbearer-proxy
       containers:
         - name: proxy

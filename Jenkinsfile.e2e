@@ -1,5 +1,5 @@
 def e2eRun(String args) {
-    sh "docker run --rm --net=host -e KUBECONFIG_B64 ${REGISTRY}/e2e:${IMAGE_TAG} ${args}"
+    sh "docker run --rm --net=host -e KUBECONFIG_B64 -e DOCKER_CONFIG_B64 ${REGISTRY}/e2e:${IMAGE_TAG} ${args}"
 }
 
 pipeline {
@@ -20,9 +20,13 @@ pipeline {
     stages {
         stage('Prepare') {
             steps {
-                withCredentials([file(credentialsId: 'KUBECONFIG', variable: 'KUBECONFIG_FILE')]) {
+                withCredentials([
+                    file(credentialsId: 'KUBECONFIG', variable: 'KUBECONFIG_FILE'),
+                    file(credentialsId: 'DOCKER_SECLIO_REGISTRY', variable: 'DOCKER_CONFIG_FILE')
+                ]) {
                     script {
                         env.KUBECONFIG_B64 = sh(script: 'base64 -w0 "$KUBECONFIG_FILE"', returnStdout: true).trim()
+                        env.DOCKER_CONFIG_B64 = sh(script: 'base64 -w0 "$DOCKER_CONFIG_FILE"', returnStdout: true).trim()
                     }
                 }
             }
