@@ -114,6 +114,10 @@ Each service needs two things: trust the Overbearer CA, and route traffic throug
 | Proxy TLS | Validates upstream certificates, rejects invalid certs with 503 |
 | Audit trail | All token usage logged to ClickHouse |
 
+### Why passkeys?
+
+The management console — where tokens are created, rotated, and revoked — is the most sensitive part of Overbearer. If an attacker gains access to it, they can exfiltrate every real token in the system. Traditional password-based authentication is vulnerable to phishing, credential stuffing, and password reuse. Overbearer eliminates this attack surface entirely by using WebAuthn passkeys as the sole authentication method. Passkeys are bound to the origin, so they cannot be phished. There is no password to steal, no session token to intercept during login, and no credential database to breach. An attacker would need physical access to the user's authenticator device.
+
 ### What if Overbearer itself is compromised?
 
 The master encryption key is a Kubernetes Secret. If the proxy pods are compromised, the attacker gets the key and the encrypted tokens. This is the same threat model as any secrets manager — the difference is that Overbearer is a controlled, auditable chokepoint rather than secrets scattered across dozens of services.
