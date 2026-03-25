@@ -72,6 +72,16 @@ CREATE TABLE IF NOT EXISTS ca_certificates (
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
+CREATE TABLE IF NOT EXISTS service_certificates (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    service_name VARCHAR(255) UNIQUE NOT NULL,
+    cert_pem TEXT NOT NULL,
+    key_pem_encrypted BYTEA NOT NULL,
+    ca_cert_hash VARCHAR(64),
+    expires_at TIMESTAMPTZ NOT NULL,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
 CREATE TABLE IF NOT EXISTS webauthn_challenges (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     challenge TEXT NOT NULL,

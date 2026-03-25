@@ -205,7 +205,7 @@ spec:
     spec:
       containers:
         - name: postgres
-          image: postgres:16-alpine
+          image: postgres:17-alpine
           ports:
             - containerPort: 5432
           envFrom:
@@ -369,7 +369,7 @@ spec:
     spec:
       containers:
         - name: clickhouse
-          image: clickhouse/clickhouse-server:26.1-alpine
+          image: clickhouse/clickhouse-server:26.2-alpine
           ports:
             - containerPort: 8123
               name: http

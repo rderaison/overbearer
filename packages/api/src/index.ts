@@ -70,7 +70,7 @@ async function main(): Promise<void> {
 
   // --- Register plugins ---
   await fastify.register(fastifyCors, {
-    origin: process.env.CORS_ORIGIN || true,
+    origin: process.env.CORS_ORIGIN || false,
     credentials: true,
   });
 

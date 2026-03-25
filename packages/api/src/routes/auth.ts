@@ -119,7 +119,8 @@ export default async function authRoutes(fastify: FastifyInstance): Promise<void
         }
         return reply.send({ success: true });
       } catch (err) {
-        return reply.code(400).send({ error: (err as Error).message });
+        request.log.error(err, 'Passkey registration verification failed');
+        return reply.code(400).send({ error: 'Passkey verification failed' });
       }
     },
   );
@@ -244,7 +245,8 @@ export default async function authRoutes(fastify: FastifyInstance): Promise<void
         },
       });
     } catch (err) {
-      return reply.code(400).send({ error: (err as Error).message });
+      request.log.error(err, 'Passkey registration failed');
+      return reply.code(400).send({ error: 'Registration failed' });
     }
   });
 
@@ -286,7 +288,8 @@ export default async function authRoutes(fastify: FastifyInstance): Promise<void
         },
       });
     } catch (err) {
-      return reply.code(401).send({ error: (err as Error).message });
+      request.log.error(err, 'Passkey authentication failed');
+      return reply.code(401).send({ error: 'Authentication failed' });
     }
   });
 

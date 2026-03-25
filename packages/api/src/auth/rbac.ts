@@ -43,6 +43,7 @@ export function requireAuth(): preHandlerHookHandler {
     const authenticated = await extractUser(request);
     if (!authenticated) {
       reply.code(401).send({ error: 'Authentication required' });
+      return;
     }
   };
 }
@@ -64,6 +65,7 @@ export function requireRole(minRole: Role): preHandlerHookHandler {
 
     if (userLevel < requiredLevel) {
       reply.code(403).send({ error: 'Insufficient permissions' });
+      return;
     }
   };
 }
