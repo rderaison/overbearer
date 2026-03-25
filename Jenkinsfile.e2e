@@ -30,24 +30,22 @@ pipeline {
         }
 
         stage('E2E Tests') {
-            parallel {
-                stage('API Tests') {
-                    steps {
-                        sh "bash e2e/run-e2e.sh ${E2E_NS} ${REGISTRY} ${IMAGE_TAG} api"
+            steps {
+                withCredentials([
+                    file(credentialsId: 'kubectl-binary', variable: 'KUBECTL_BIN'),
+                    file(credentialsId: 'e2e-kubeconfig', variable: 'KUBECONFIG_FILE')
+                ]) {
+                    script {
+                        docker.image('node:latest').inside() {
+                            sh 'install -m 0755 "$KUBECTL_BIN" /usr/local/bin/kubectl'
+                            sh 'mkdir -p ~/.kube && cp "$KUBECONFIG_FILE" ~/.kube/config'
+                            sh 'npm ci --prefix e2e'
+                            sh "bash e2e/run-e2e.sh ${E2E_NS} ${REGISTRY} ${IMAGE_TAG} api"
+                            sh "bash e2e/run-e2e.sh ${E2E_NS} ${REGISTRY} ${IMAGE_TAG} proxy"
+                            sh "bash e2e/run-e2e.sh ${E2E_NS} ${REGISTRY} ${IMAGE_TAG} ui"
+                        }
                     }
                 }
-            }
-        }
-
-        stage('Proxy Tests') {
-            steps {
-                sh "bash e2e/run-e2e.sh ${E2E_NS} ${REGISTRY} ${IMAGE_TAG} proxy"
-            }
-        }
-
-        stage('UI Tests') {
-            steps {
-                sh "bash e2e/run-e2e.sh ${E2E_NS} ${REGISTRY} ${IMAGE_TAG} ui"
             }
         }
     }
@@ -60,7 +58,6 @@ pipeline {
         }
         failure {
             echo 'E2E tests failed!'
-            // Dump logs before cleanup for debugging
             sh "kubectl -n ${E2E_NS} logs deployment/overbearer-management --tail=50 || true"
             sh "kubectl -n ${E2E_NS} logs deployment/overbearer-proxy --tail=50 || true"
         }
