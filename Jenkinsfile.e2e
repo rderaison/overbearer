@@ -30,7 +30,7 @@ pipeline {
             steps {
                 sh "docker build -f Dockerfile.proxy -t ${REGISTRY}/proxy:${IMAGE_TAG} ."
                 sh "docker build -f Dockerfile.api -t ${REGISTRY}/management:${IMAGE_TAG} ."
-                sh "docker build -f Dockerfile.e2e -t ${REGISTRY}/e2e:${IMAGE_TAG} ."
+                sh "docker build --no-cache -f Dockerfile.e2e -t ${REGISTRY}/e2e:${IMAGE_TAG} ."
                 sh "docker push ${REGISTRY}/proxy:${IMAGE_TAG}"
                 sh "docker push ${REGISTRY}/management:${IMAGE_TAG}"
             }
