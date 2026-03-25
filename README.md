@@ -49,74 +49,59 @@ Overbearer performs TLS interception using a private Certificate Authority that 
 - `kubectl` configured
 - `docker` installed
 
-### Quick Start (Docker Compose)
+### Deployment
+
+Overbearer runs on Kubernetes. The interactive setup script generates all the manifests you need, tailored to your environment.
+
+#### 1. Run the setup script
 
 ```bash
-# Clone the repository
-git clone https://github.com/your-org/overbearer.git
+git clone https://github.com/rderaison/overbearer.git
 cd overbearer
-
-# Install dependencies
-npm install
-
-# Start all services locally
-docker compose up -d
-
-# The management UI is at http://localhost:3000
-# The proxy listens on port 8080
+bash setup.sh
 ```
 
-### Kubernetes Deployment
+The script walks you through configuration — it will ask for:
+
+- **Namespace** and **container registry/tag** for your images
+- **Hostnames** for the management UI and the proxy (used for TLS certificates and WebAuthn passkey configuration)
+- **Networking** — whether to use LoadBalancer services (for cloud or MetalLB) and optional static IPs
+- **Storage class** — provide one for persistent volumes, or leave empty to use `emptyDir` for testing
+- **Kafka** — optionally point to your Kafka brokers for production-grade log shipping to ClickHouse
+- **Scaling** — min and max replicas for the proxy's HorizontalPodAutoscaler
+
+The script generates cryptographic secrets (master encryption key, JWT secret, PostgreSQL password) automatically and writes all manifests into a `./generated/` directory.
+
+#### 2. Apply the generated manifests
 
 ```bash
-# Create the namespace and deploy infrastructure
-kubectl apply -f k8s/namespace.yaml
-kubectl apply -f k8s/secrets.yaml      # ⚠️ Change the default secrets first!
-kubectl apply -f k8s/postgres/
-kubectl apply -f k8s/clickhouse/
-kubectl apply -f k8s/memcached/
+kubectl apply -f generated/01-namespace.yaml
+kubectl apply -f generated/02-secrets.yaml
+kubectl apply -f generated/storage/
+kubectl apply -f generated/network/
 
 # Wait for infrastructure to be ready
-kubectl -n overbearer wait --for=condition=ready pod -l app=postgres --timeout=60s
-kubectl -n overbearer wait --for=condition=ready pod -l app=clickhouse --timeout=60s
-kubectl -n overbearer wait --for=condition=ready pod -l app=memcached --timeout=60s
+kubectl -n <namespace> wait --for=condition=ready pod -l app=postgres --timeout=60s
+kubectl -n <namespace> wait --for=condition=ready pod -l app=clickhouse --timeout=60s
+kubectl -n <namespace> wait --for=condition=ready pod -l app=memcached --timeout=60s
 
 # Deploy Overbearer
-kubectl apply -f k8s/management/
-kubectl apply -f k8s/proxy/
+kubectl apply -f generated/deployments/
 ```
 
-### Initial Setup
+> **Important:** `generated/02-secrets.yaml` contains your encryption keys. Back it up securely and do not commit it to version control.
 
-1. Open the management console
+#### 3. Initial setup
+
+1. Open the management console at `https://<mgmt-hostname>/`
 2. Register your first account (automatically gets `admin` role)
 3. Generate a CA certificate: **Settings → Generate CA**
-4. Download the CA certificate and add it to your services' trust store
-5. Configure your services to use the proxy (set `HTTPS_PROXY=http://overbearer-proxy:8080`)
-6. Create token mappings: add your real API keys and get fake tokens back
-7. Replace the real tokens in your services with the fake ones
+4. Create token mappings: add your real API keys and get fake tokens back
+5. Configure your services to use the proxy (see below)
 
 ### Configuring Your Services
 
-Add Overbearer's CA certificate to your service's trust store and point it at the proxy:
-
-```dockerfile
-# In your Dockerfile
-COPY overbearer-ca.pem /usr/local/share/ca-certificates/overbearer.crt
-RUN update-ca-certificates
-
-ENV HTTPS_PROXY=http://overbearer-proxy.overbearer.svc.cluster.local:8080
-ENV NODE_EXTRA_CA_CERTS=/usr/local/share/ca-certificates/overbearer.crt
-```
-
-```yaml
-# In your Kubernetes deployment
-env:
-  - name: HTTPS_PROXY
-    value: "http://overbearer-proxy.overbearer.svc.cluster.local:8080"
-  - name: ANTHROPIC_API_KEY
-    value: "ovb_your_fake_token_here"  # This is worthless without Overbearer
-```
+Each service needs two things: trust the Overbearer CA, and route traffic through the proxy. See the [FAQ entry on configuring apps](#how-do-i-configure-my-apps-to-use-overbearer) for detailed instructions.
 
 ---
 
