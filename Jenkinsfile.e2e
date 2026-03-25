@@ -21,7 +21,16 @@ pipeline {
         stage('Prepare') {
             steps {
                 withCredentials([file(credentialsId: 'KUBECONFIG', variable: 'KUBECONFIG_FILE')]) {
-                    sh 'mkdir -p "$WORKSPACE/.kube" && cp "$KUBECONFIG_FILE" "$WORKSPACE/.kube/config"'
+                    sh '''
+                        echo "DEBUG: credential path: $KUBECONFIG_FILE"
+                        ls -la "$KUBECONFIG_FILE"
+                        file "$KUBECONFIG_FILE"
+                        mkdir -p "$WORKSPACE/.kube"
+                        cat "$KUBECONFIG_FILE" > "$WORKSPACE/.kube/config"
+                        echo "DEBUG: copied config:"
+                        ls -la "$WORKSPACE/.kube/config"
+                        head -5 "$WORKSPACE/.kube/config"
+                    '''
                 }
             }
         }
