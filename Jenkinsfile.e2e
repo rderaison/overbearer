@@ -2,9 +2,10 @@ pipeline {
     agent any
 
     environment {
-        REGISTRY    = 'registry.ny.secl.io/overbearer'
-        IMAGE_TAG   = "e2e-${env.BUILD_NUMBER}"
-        E2E_NS      = 'overbearer-e2e'
+        REGISTRY          = 'registry.ny.secl.io/overbearer'
+        IMAGE_TAG         = "e2e-${env.BUILD_NUMBER}"
+        E2E_NS            = 'overbearer-e2e'
+        DOCKER_API_VERSION = '1.43'
     }
 
     options {
