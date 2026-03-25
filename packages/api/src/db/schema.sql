@@ -27,6 +27,7 @@ CREATE TABLE IF NOT EXISTS token_mappings (
     name VARCHAR(255) NOT NULL,
     provider VARCHAR(255),
     fake_token_hash VARCHAR(64) UNIQUE NOT NULL,
+    fake_token_value TEXT NOT NULL,
     real_token_encrypted BYTEA NOT NULL,
     real_token_hash VARCHAR(64) NOT NULL,
     created_by UUID REFERENCES users(id),
@@ -81,3 +82,15 @@ CREATE TABLE IF NOT EXISTS webauthn_challenges (
 );
 
 CREATE INDEX IF NOT EXISTS idx_challenge_expires ON webauthn_challenges(expires_at);
+
+CREATE TABLE IF NOT EXISTS invite_tokens (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    token VARCHAR(255) UNIQUE NOT NULL,
+    used BOOLEAN DEFAULT FALSE,
+    expires_at TIMESTAMPTZ NOT NULL,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_invite_token ON invite_tokens(token);
+CREATE INDEX IF NOT EXISTS idx_invite_user ON invite_tokens(user_id);
