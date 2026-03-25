@@ -550,7 +550,7 @@ ui)
     -d '{"username":"ui-admin","displayName":"UI Admin"}' \
     "http://localhost:13000/api/auth/setup" > /dev/null 2>&1 || true
 
-  OVERBEARER_URL="http://localhost:13000" npx tsx e2e/ui-walkthrough.ts 2>&1
+  OVERBEARER_URL="http://localhost:13000" npx tsx ui-walkthrough.ts 2>&1
   ;;
 
 # ============================================================================
