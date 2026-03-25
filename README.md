@@ -1,12 +1,10 @@
 # Overbearer
 
-**Bearer tokens are a ticking time bomb. Overbearer defuses them.**
-
 ---
 
 ## Why
 
-Every bearer token is a single point of failure. It sits in an environment variable, a config file, a CI secret — and the moment any link in your supply chain is compromised, that token walks out the door. You rotate it, patch the leak, and hope it doesn't happen again. But it will.
+Every bearer token is a single point of failure. We treat them with reverence — we lock them in secret vaults in Jenkins, in Kubernetes, in HSMs. We only show them once. We act like they're state secrets. And yet, at runtime, your typical bearer token sits in an environment variable or a config file. The moment any link in your supply chain is compromised, that token walks out the door. You rotate it, patch the leak, and hope it doesn't happen again. But it will.
 
 The problem isn't how you *store* tokens. The problem is that the token your service uses *is the real token*. If it leaks, the attacker has the keys to the kingdom.
 
