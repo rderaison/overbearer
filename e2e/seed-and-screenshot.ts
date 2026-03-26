@@ -792,7 +792,7 @@ async function takeScreenshots(usersByRole: Record<string, string>): Promise<voi
   });
 
   const page = await browser.newPage();
-  await page.setViewport({ width: 1440, height: 900 });
+  await page.setViewport({ width: 1440, height: 900, deviceScaleFactor: 2 });
   page.setDefaultTimeout(15_000);
 
   const url = new URL(MGMT_URL);
