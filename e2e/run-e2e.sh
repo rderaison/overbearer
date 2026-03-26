@@ -445,7 +445,7 @@ console.log(t);")
   R=$(curl -sk -b /tmp/ovb-e2e-cookies -X POST -H "Content-Type: application/json" \
     -d '{"name":"TestGroup","description":"E2E test group"}' "$API/api/groups")
   check "Create group" "$R" "TestGroup"
-  GID=$(echo "$R" | python3 -c "import sys,json; print(json.load(sys.stdin)['group']['id'])" 2>/dev/null || echo "")
+  GID=$(echo "$R" | python3 -c "import sys,json; print(json.load(sys.stdin)['id'])" 2>/dev/null || echo "")
 
   R=$(curl -sk -b /tmp/ovb-e2e-cookies "$API/api/groups")
   check "List groups" "$R" "TestGroup"
@@ -462,7 +462,7 @@ console.log(t);")
   R=$(curl -sk -b /tmp/ovb-e2e-cookies -X POST -H "Content-Type: application/json" \
     -d '{"servicePattern":"test/*","description":"e2e test"}' "$API/api/proxy-acls")
   check "Create ACL rule" "$R" "test/*"
-  ACID=$(echo "$R" | python3 -c "import sys,json; print(json.load(sys.stdin)['rule']['id'])" 2>/dev/null || echo "")
+  ACID=$(echo "$R" | python3 -c "import sys,json; print(json.load(sys.stdin)['id'])" 2>/dev/null || echo "")
 
   R=$(curl -sk -b /tmp/ovb-e2e-cookies "$API/api/proxy-acls/status")
   check "Proxy ACL restricted" "$R" '"restricted"'
