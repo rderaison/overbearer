@@ -8,7 +8,7 @@ import type {
   RegistrationResponseJSON,
   AuthenticationResponseJSON,
   AuthenticatorTransportFuture,
-} from '@simplewebauthn/types';
+} from '@simplewebauthn/server';
 import { query } from '../db/postgres.js';
 
 const RP_ID = process.env.OVERBEARER_RP_ID || 'localhost';

@@ -2,7 +2,8 @@ import type { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import forge from 'node-forge';
 import { query, getPool } from '../db/postgres.js';
 import { encrypt } from '../services/encryption.js';
-import { requireAuth, requireRole } from '../auth/rbac.js';
+import { requireRole } from '../auth/rbac.js';
+import { generateCa } from '../services/ca.js';
 
 interface CaCertRow {
   id: string;
@@ -51,74 +52,8 @@ export default async function caRoutes(fastify: FastifyInstance): Promise<void> 
     '/api/ca/generate',
     { preHandler: requireRole('admin') },
     async (_request: FastifyRequest, reply: FastifyReply) => {
-      // Generate a 4096-bit RSA key pair
-      const keys = forge.pki.rsa.generateKeyPair(4096);
-
-      const cert = forge.pki.createCertificate();
-      cert.publicKey = keys.publicKey;
-      cert.serialNumber = '01';
-
-      // Valid from now, for 20 years
-      const now = new Date();
-      const expiry = new Date(now);
-      expiry.setFullYear(expiry.getFullYear() + 20);
-
-      cert.validity.notBefore = now;
-      cert.validity.notAfter = expiry;
-
-      const attrs = [
-        { name: 'commonName', value: 'Overbearer CA' },
-        { name: 'organizationName', value: 'Overbearer' },
-      ];
-      cert.setSubject(attrs);
-      cert.setIssuer(attrs);
-
-      // CA extensions
-      cert.setExtensions([
-        { name: 'basicConstraints', cA: true, critical: true },
-        {
-          name: 'keyUsage',
-          keyCertSign: true,
-          cRLSign: true,
-          critical: true,
-        },
-        {
-          name: 'subjectKeyIdentifier',
-        },
-      ]);
-
-      // Self-sign with SHA-256
-      cert.sign(keys.privateKey, forge.md.sha256.create());
-
-      const certPem = forge.pki.certificateToPem(cert);
-      const keyPem = forge.pki.privateKeyToPem(keys.privateKey);
-
-      // Encrypt the private key before storing
-      const encryptedKey = encrypt(keyPem);
-
-      // Deactivate all existing CAs and insert the new one, in a transaction
-      const pool = getPool();
-      const client = await pool.connect();
-      try {
-        await client.query('BEGIN');
-        await client.query('UPDATE ca_certificates SET is_active = FALSE WHERE is_active = TRUE');
-        await client.query(
-          `INSERT INTO ca_certificates (cert_pem, key_pem_encrypted, is_active, expires_at)
-           VALUES ($1, $2, TRUE, $3)`,
-          [certPem, encryptedKey, expiry.toISOString()],
-        );
-        await client.query('COMMIT');
-      } catch (err) {
-        await client.query('ROLLBACK');
-        throw err;
-      } finally {
-        client.release();
-      }
-
-      return reply.code(201).send({
-        success: true,
-        expiresAt: expiry.toISOString(),
-      });
+      const { expiresAt } = await generateCa();
+      return reply.code(201).send({ success: true, expiresAt });
     },
   );
 

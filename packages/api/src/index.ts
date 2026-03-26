@@ -13,6 +13,7 @@ import { initEncryption } from './services/encryption.js';
 import { initDatabase, closeDatabase } from './db/postgres.js';
 import { syncAllTokensToMemcached } from './services/token-service.js';
 import { closeMemcached } from './services/memcached-sync.js';
+import { ensureCaExists } from './services/ca.js';
 
 import authRoutes from './routes/auth.js';
 import tokenRoutes from './routes/tokens.js';
@@ -132,6 +133,9 @@ async function main(): Promise<void> {
     console.error('Failed to sync tokens to memcached:', (err as Error).message);
     // Non-fatal: continue startup, tokens can be synced later
   }
+
+  // --- Ensure CA exists (auto-generate on fresh install) ---
+  await ensureCaExists();
 
   // --- TLS setup ---
   const tlsCreds = await getTlsCredentials();

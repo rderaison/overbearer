@@ -186,6 +186,37 @@ echo -e "${YELLOW}Hostnames${NC}"
 ask "Management UI hostname (for TLS & passkeys)" "" MGMT_HOSTNAME
 ask "Proxy hostname" "" PROXY_HOSTNAME
 
+# --- Optional custom TLS certificate for management UI ---
+echo ""
+echo -e "  ${DIM}The management UI serves HTTPS on port 443. By default it will${NC}"
+echo -e "  ${DIM}auto-generate a certificate from its internal CA on first start.${NC}"
+echo -e "  ${DIM}If you have a .pem file (certificate + private key) you'd like to${NC}"
+echo -e "  ${DIM}use instead (e.g. from Let's Encrypt or your corporate CA), provide${NC}"
+echo -e "  ${DIM}its path below. Otherwise leave empty.${NC}"
+ask "Path to management TLS .pem file (leave empty to auto-generate)" "" MGMT_TLS_PEM_PATH
+MGMT_TLS_PEM_CONTENT=""
+if [ -n "$MGMT_TLS_PEM_PATH" ]; then
+  if [ ! -f "$MGMT_TLS_PEM_PATH" ]; then
+    echo -e "  ${RED}File not found: ${MGMT_TLS_PEM_PATH}${NC}"
+    echo -e "  ${DIM}Falling back to auto-generated certificate.${NC}"
+    MGMT_TLS_PEM_PATH=""
+  else
+    MGMT_TLS_PEM_CONTENT=$(cat "$MGMT_TLS_PEM_PATH")
+    # Quick sanity check
+    if ! echo "$MGMT_TLS_PEM_CONTENT" | grep -q "BEGIN CERTIFICATE"; then
+      echo -e "  ${RED}Warning: file does not appear to contain a PEM certificate.${NC}"
+      ask_yn "Use it anyway?" "n" USE_BAD_PEM
+      if [ "$USE_BAD_PEM" = "no" ]; then
+        MGMT_TLS_PEM_PATH=""
+        MGMT_TLS_PEM_CONTENT=""
+        echo -e "  ${DIM}Falling back to auto-generated certificate.${NC}"
+      fi
+    else
+      echo -e "  ${GREEN}Certificate loaded.${NC}"
+    fi
+  fi
+fi
+
 # ---------------------------------------------------------------------------
 # Networking: LoadBalancers
 # ---------------------------------------------------------------------------
@@ -424,6 +455,20 @@ EOF
 # 02-secrets.yaml
 # ---------------------------------------------------------------------------
 
+MGMT_TLS_SECRET=""
+if [ -n "$MGMT_TLS_PEM_PATH" ]; then
+  MGMT_TLS_SECRET="---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: management-tls
+  namespace: ${NAMESPACE}
+type: Opaque
+stringData:
+  tls.pem: |
+$(echo "$MGMT_TLS_PEM_CONTENT" | sed 's/^/    /')"
+fi
+
 cat > "$OUTDIR/02-secrets.yaml" <<EOF
 apiVersion: v1
 kind: Secret
@@ -446,6 +491,7 @@ stringData:
   POSTGRES_USER: "overbearer"
   POSTGRES_PASSWORD: "${PG_PASSWORD}"
   POSTGRES_DB: "overbearer"
+${MGMT_TLS_SECRET}
 EOF
 
 # ---------------------------------------------------------------------------
@@ -887,6 +933,22 @@ EOF
 # Deployments: Management
 # ---------------------------------------------------------------------------
 
+MGMT_TLS_VOLUME_MOUNT=""
+MGMT_TLS_VOLUME=""
+if [ -n "$MGMT_TLS_PEM_PATH" ]; then
+  MGMT_TLS_VOLUME_MOUNT="          volumeMounts:
+            - name: tls-cert
+              mountPath: /etc/ssl/management
+              readOnly: true"
+  MGMT_TLS_VOLUME="      volumes:
+        - name: tls-cert
+          secret:
+            secretName: management-tls
+            items:
+              - key: tls.pem
+                path: tls.pem"
+fi
+
 cat > "$OUTDIR/deployments/management.yaml" <<EOF
 apiVersion: apps/v1
 kind: Deployment
@@ -940,6 +1002,7 @@ spec:
           envFrom:
             - secretRef:
                 name: overbearer-secrets
+${MGMT_TLS_VOLUME_MOUNT}
           resources:
             requests:
               memory: "128Mi"
@@ -959,6 +1022,7 @@ spec:
               port: 3000
             initialDelaySeconds: 5
             periodSeconds: 5
+${MGMT_TLS_VOLUME}
 EOF
 
 # ---------------------------------------------------------------------------
@@ -1085,7 +1149,11 @@ fi
 echo ""
 echo -e "  ${OUTDIR}/"
 echo -e "  ├── 01-namespace.yaml"
+if [ -n "$MGMT_TLS_PEM_PATH" ]; then
+echo -e "  ├── 02-secrets.yaml       ${DIM}(contains encryption keys + TLS cert)${NC}"
+else
 echo -e "  ├── 02-secrets.yaml       ${DIM}(contains encryption keys)${NC}"
+fi
 echo -e "  ├── storage/"
 if [ -n "$STORAGE_CLASS" ]; then
 echo -e "  │   ├── postgres-pvc.yaml"
@@ -1114,11 +1182,16 @@ echo "  kubectl -n ${NAMESPACE} wait --for=condition=ready pod -l app=memcached 
 echo "  # Deploy Overbearer:"
 echo "  kubectl apply -f ${OUTDIR}/deployments/"
 echo ""
+if [ -n "$MGMT_TLS_PEM_PATH" ]; then
+  echo -e "  ${DIM}Management TLS: custom certificate${NC}"
+else
+  echo -e "  ${DIM}Management TLS: auto-generated (from internal CA)${NC}"
+fi
+echo ""
 echo -e "${BOLD}After deployment:${NC}"
 echo ""
 echo "  1. Open https://${MGMT_HOSTNAME}/ and create your admin account"
-echo "  2. Go to Settings → Generate CA"
-echo "  3. Create token mappings and configure your services"
+echo "  2. Create token mappings and configure your services"
 echo ""
 echo -e "${BOLD}Configure services to use the proxy:${NC}"
 echo ""
