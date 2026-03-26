@@ -344,8 +344,18 @@ spec:
 EOF
 
   echo "  Waiting for Overbearer..."
-  kubectl -n "$NS" wait --for=condition=ready pod -l app=overbearer-management --timeout=120s
-  kubectl -n "$NS" wait --for=condition=ready pod -l app=overbearer-proxy --timeout=120s
+  if ! kubectl -n "$NS" wait --for=condition=ready pod -l app=overbearer-management --timeout=120s; then
+    echo "  ERROR: management pod not ready, collecting diagnostics..."
+    kubectl -n "$NS" describe pod -l app=overbearer-management 2>&1 | tail -30
+    dump_logs
+    exit 1
+  fi
+  if ! kubectl -n "$NS" wait --for=condition=ready pod -l app=overbearer-proxy --timeout=120s; then
+    echo "  ERROR: proxy pod not ready, collecting diagnostics..."
+    kubectl -n "$NS" describe pod -l app=overbearer-proxy 2>&1 | tail -30
+    dump_logs
+    exit 1
+  fi
 
   echo "  Environment ready."
   ;;
