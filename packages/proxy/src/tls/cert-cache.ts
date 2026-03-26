@@ -81,6 +81,10 @@ function generateSerial(): string {
   return "0" + hex.slice(1);
 }
 
+export function clearCertCache(): void {
+  cache.clear();
+}
+
 function isIPAddress(host: string): boolean {
   // Simple check covering IPv4 and bracketed IPv6
   return /^(\d{1,3}\.){3}\d{1,3}$/.test(host) || host.includes(":");

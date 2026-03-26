@@ -8,8 +8,8 @@ import { performMitm } from "./tls/mitm.js";
 import { identifyService } from "./k8s/service-id.js";
 import { log, type ProxyLogEntry } from "./logging/clickhouse.js";
 import { lookupFakeToken } from "./token/memcached.js";
-import { isCALoaded, getCACert, getCAKey } from "./tls/ca.js";
-import { getCertForHost } from "./tls/cert-cache.js";
+import { isCALoaded, getCACert, getCAKey, onCAChanged } from "./tls/ca.js";
+import { getCertForHost, clearCertCache } from "./tls/cert-cache.js";
 import { isServiceAllowed } from "./acl/source-acl.js";
 
 function cleanIp(ip: string): string {
@@ -72,6 +72,13 @@ export function startProxy(port: number): http.Server {
   // Start TLS listener — auto-generate cert from CA
   const tlsPort = parseInt(process.env.TLS_PORT ?? "8443", 10);
   startTlsListener(tlsPort);
+
+  // When the CA changes, regenerate the service cert and clear MITM cache
+  onCAChanged(() => {
+    console.log("[proxy] CA changed, regenerating service certificate and clearing MITM cache...");
+    clearCertCache();
+    startTlsListener(tlsPort);
+  });
 
   return server;
 }

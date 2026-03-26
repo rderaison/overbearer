@@ -105,6 +105,17 @@ export function getCAKey(): forge.pki.PrivateKey {
 let caCheckInterval: ReturnType<typeof setInterval> | undefined;
 let lastCaCertPem: string | undefined;
 
+type CAChangedCallback = () => void;
+const caChangedCallbacks: CAChangedCallback[] = [];
+
+/**
+ * Register a callback to be invoked when the CA certificate changes.
+ * Only fires on actual changes, not on initial watcher sync.
+ */
+export function onCAChanged(cb: CAChangedCallback): void {
+  caChangedCallbacks.push(cb);
+}
+
 export function startCAWatcher(intervalMs = 30_000): void {
   caCheckInterval = setInterval(() => {
     void reloadIfChanged();
@@ -140,9 +151,16 @@ async function reloadIfChanged(): Promise<void> {
       if (result.rows.length === 0) return;
       const newPem = result.rows[0].cert_pem;
       if (newPem !== lastCaCertPem) {
+        const isInitialSync = lastCaCertPem === undefined;
         console.log("[ca] CA change detected, reloading...");
         await loadCA();
         lastCaCertPem = newPem;
+        if (!isInitialSync) {
+          console.log("[ca] notifying listeners of CA change...");
+          for (const cb of caChangedCallbacks) {
+            try { cb(); } catch { /* don't let a listener crash the watcher */ }
+          }
+        }
       }
     } finally {
       await pool.end();
