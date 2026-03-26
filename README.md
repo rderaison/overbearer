@@ -146,6 +146,7 @@ Then add the following to your service's Dockerfile:
 
 ```dockerfile
 # Install the Overbearer CA certificate
+RUN apk add --no-cache ca-certificates
 COPY overbearer-ca.pem /usr/local/share/ca-certificates/overbearer.crt
 RUN update-ca-certificates
 
