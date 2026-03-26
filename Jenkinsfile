@@ -4,12 +4,14 @@ pipeline {
     parameters {
         string(name: 'OVERBEARER_REGISTRY', defaultValue: 'ghcr.io/rderaison/overbearer', description: 'Container image registry')
         string(name: 'OVERBEARER_REGISTRY_CREDS', defaultValue: 'GHCR_IO_LOGIN', description: 'Jenkins credentials ID for docker login')
+        string(name: 'IMAGE_TAG', defaultValue: '', description: 'Docker image tag (leave empty to auto-generate from branch/build)')
+        booleanParam(name: 'TAG_AS_LATEST', defaultValue: false, description: 'Also tag this build as "latest"')
     }
 
     environment {
         REGISTRY           = "${params.OVERBEARER_REGISTRY}"
         REGISTRY_CREDS_ID  = "${params.OVERBEARER_REGISTRY_CREDS}"
-        IMAGE_TAG          = "${(env.BRANCH_NAME ?: 'main') == 'main' ? 'latest' : env.BRANCH_NAME + '-' + env.BUILD_NUMBER}"
+        IMAGE_TAG          = "${params.IMAGE_TAG ?: ((env.BRANCH_NAME ?: 'main') == 'main' ? 'latest' : env.BRANCH_NAME + '-' + env.BUILD_NUMBER)}"
         DOCKER_API_VERSION = '1.43'
     }
 
@@ -47,6 +49,14 @@ pipeline {
                 }
                 sh "docker push ${REGISTRY}/proxy:${IMAGE_TAG}"
                 sh "docker push ${REGISTRY}/management:${IMAGE_TAG}"
+                script {
+                    if (params.TAG_AS_LATEST && IMAGE_TAG != 'latest') {
+                        sh "docker tag ${REGISTRY}/proxy:${IMAGE_TAG} ${REGISTRY}/proxy:latest"
+                        sh "docker tag ${REGISTRY}/management:${IMAGE_TAG} ${REGISTRY}/management:latest"
+                        sh "docker push ${REGISTRY}/proxy:latest"
+                        sh "docker push ${REGISTRY}/management:latest"
+                    }
+                }
             }
         }
     }
