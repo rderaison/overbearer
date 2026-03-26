@@ -355,29 +355,51 @@ async function main() {
     };
   });
 
-  // Helper: save the admin session cookie value, restore it after a callback
+  // Helper: save the admin session cookie value, restore it after a callback.
+  // Caches user sessions after first invite acceptance so invites aren't reused.
+  const sessionCache: Record<string, string> = {};
+
   async function asUser(inviteToken: string, fn: () => Promise<void>): Promise<void> {
     // Save admin session
     const cookies = await page.cookies();
     const adminCookie = cookies.find((c) => c.name === 'overbearer_session');
     assert(adminCookie !== undefined, 'No admin session cookie found');
+    const url = new URL(BASE);
 
     try {
-      // Accept invite (sets new session cookie)
-      const status = await page.evaluate(
-        `(async () => {
-          const r = await fetch("${BASE}/api/invite/${inviteToken}/accept", {
-            method: "POST", credentials: "include",
-          });
-          return r.status;
-        })()`,
-      );
-      assert(status === 200, `Invite accept failed: ${status}`);
+      if (sessionCache[inviteToken]) {
+        // Reuse cached session
+        await page.deleteCookie({ name: 'overbearer_session', domain: url.hostname });
+        await page.setCookie({
+          name: 'overbearer_session',
+          value: sessionCache[inviteToken],
+          domain: url.hostname,
+          path: '/',
+          httpOnly: true,
+        });
+      } else {
+        // Accept invite (sets new session cookie)
+        const status = await page.evaluate(
+          `(async () => {
+            const r = await fetch("${BASE}/api/invite/${inviteToken}/accept", {
+              method: "POST", credentials: "include",
+            });
+            return r.status;
+          })()`,
+        );
+        assert(status === 200, `Invite accept failed: ${status}`);
+
+        // Cache the new session cookie
+        const userCookies = await page.cookies();
+        const userSession = userCookies.find((c) => c.name === 'overbearer_session');
+        if (userSession) {
+          sessionCache[inviteToken] = userSession.value;
+        }
+      }
 
       await fn();
     } finally {
       // Restore admin session
-      const url = new URL(BASE);
       await page.deleteCookie({ name: 'overbearer_session', domain: url.hostname });
       await page.setCookie({
         name: 'overbearer_session',
