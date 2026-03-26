@@ -311,7 +311,7 @@ async function main() {
       if (status.mode !== 'restricted') return { step: 'status', status: sr.status, body: `mode=${status.mode}` };
 
       // Delete
-      const dr = await fetch(`${base}/api/proxy-acls/${created.rule.id}`, {
+      const dr = await fetch(`${base}/api/proxy-acls/${created.id}`, {
         method: 'DELETE', credentials: 'include',
       });
       if (dr.status >= 300) return { step: 'delete', status: dr.status, body: await dr.text() };
