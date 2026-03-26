@@ -4,7 +4,7 @@ import {
   initClickHouse,
   shutdownClickHouse,
 } from "./logging/clickhouse.js";
-import { initK8s } from "./k8s/service-id.js";
+import { initK8s, shutdownK8s } from "./k8s/service-id.js";
 import { initSourceAcls, shutdownSourceAcls } from "./acl/source-acl.js";
 import { startProxy, shutdownProxy, getConcurrentConnections } from "./proxy.js";
 
@@ -123,6 +123,7 @@ async function main(): Promise<void> {
     }
 
     stopCAWatcher();
+    await shutdownK8s();
     shutdownMemcached();
     console.log("[overbearer] memcached disconnected");
 

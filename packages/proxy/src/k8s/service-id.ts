@@ -1,22 +1,20 @@
 import * as k8s from "@kubernetes/client-node";
-import { LRUCache } from "lru-cache";
 
 export interface ServiceIdentity {
   name: string;
   ip: string;
 }
 
-const cache = new LRUCache<string, ServiceIdentity>({
-  max: 5_000,
-  ttl: 5 * 60 * 1000, // 5 minutes - IPs are relatively stable
-});
+/** Pod IP → identity, kept in sync by the informer */
+const ipMap = new Map<string, ServiceIdentity>();
 
-let coreApi: k8s.CoreV1Api | undefined;
+let informer: k8s.Informer<k8s.V1Pod> | undefined;
 let k8sAvailable = true;
 
 /**
- * Initialize the Kubernetes client.
- * Uses in-cluster config if available, otherwise falls back to kubeconfig.
+ * Initialize the Kubernetes client and start a pod informer.
+ * The informer watches all pods across namespaces and maintains
+ * a live IP → service identity map for fast lookups.
  */
 export function initK8s(): void {
   try {
@@ -26,7 +24,24 @@ export function initK8s(): void {
     } catch {
       kc.loadFromDefault();
     }
-    coreApi = kc.makeApiClient(k8s.CoreV1Api);
+
+    const coreApi = kc.makeApiClient(k8s.CoreV1Api);
+    const listFn = () => coreApi.listPodForAllNamespaces();
+
+    informer = k8s.makeInformer<k8s.V1Pod>(kc, "/api/v1/pods", listFn);
+
+    informer.on("add", (pod) => indexPod(pod));
+    informer.on("update", (pod) => indexPod(pod));
+    informer.on("delete", (pod) => removePod(pod));
+    informer.on("error", (err) => {
+      console.warn("[k8s] informer error:", err instanceof Error ? err.message : err);
+      // Restart the informer after a brief delay
+      setTimeout(() => {
+        informer?.start();
+      }, 5_000);
+    });
+
+    informer.start();
   } catch (err) {
     console.warn(
       "[k8s] Could not initialize Kubernetes client, service identification disabled:",
@@ -37,75 +52,67 @@ export function initK8s(): void {
 }
 
 /**
- * Given a source IP address, attempt to identify the Kubernetes service/pod.
- * Falls back to the raw IP address if K8s is not available or lookup fails.
+ * Stop the pod informer. Called during graceful shutdown.
+ */
+export async function shutdownK8s(): Promise<void> {
+  if (informer) {
+    await informer.stop();
+    informer = undefined;
+  }
+}
+
+/**
+ * Given a source IP address, identify the Kubernetes service/deployment.
+ * Uses the in-memory map maintained by the pod informer — no API calls.
  */
 export async function identifyService(
   sourceIp: string,
 ): Promise<ServiceIdentity> {
-  const cached = cache.get(sourceIp);
-  if (cached) return cached;
-
-  const identity = await resolveIdentity(sourceIp);
-  cache.set(sourceIp, identity);
-  return identity;
-}
-
-async function resolveIdentity(sourceIp: string): Promise<ServiceIdentity> {
-  if (!k8sAvailable || !coreApi) {
+  if (!k8sAvailable) {
     return { name: sourceIp, ip: sourceIp };
   }
 
-  try {
-    // Query pods across all namespaces matching this IP
-    const { body } = await coreApi.listPodForAllNamespaces(
-      undefined, // allowWatchBookmarks
-      undefined, // _continue
-      `status.podIP=${sourceIp}`, // fieldSelector
-    );
+  return ipMap.get(sourceIp) ?? { name: sourceIp, ip: sourceIp };
+}
 
-    if (body.items.length > 0) {
-      const pod = body.items[0]!;
-      const podName = pod.metadata?.name ?? sourceIp;
-      const namespace = pod.metadata?.namespace ?? "default";
+function indexPod(pod: k8s.V1Pod): void {
+  const ip = pod.status?.podIP;
+  if (!ip) return;
 
-      // Try to find the owning service or use the pod name
-      // Pod labels often contain app/service info
-      const labels = pod.metadata?.labels ?? {};
-      const serviceName =
-        labels["app.kubernetes.io/name"] ??
-        labels["app"] ??
-        labels["k8s-app"] ??
-        podName;
+  const namespace = pod.metadata?.namespace ?? "default";
+  const labels = pod.metadata?.labels ?? {};
 
-      return {
-        name: `${namespace}/${serviceName}`,
-        ip: sourceIp,
-      };
-    }
+  // Prefer standard labels, then walk ownerReferences for deployment name
+  const name =
+    labels["app.kubernetes.io/name"] ??
+    labels["app"] ??
+    labels["k8s-app"] ??
+    deploymentNameFromOwnerRefs(pod) ??
+    pod.metadata?.name ??
+    ip;
 
-    // No pod found - maybe it's a Service ClusterIP
-    const { body: svcBody } = await coreApi.listServiceForAllNamespaces(
-      undefined,
-      undefined,
-      `spec.clusterIP=${sourceIp}`,
-    );
+  ipMap.set(ip, { name: `${namespace}/${name}`, ip });
+}
 
-    if (svcBody.items.length > 0) {
-      const svc = svcBody.items[0]!;
-      const svcName = svc.metadata?.name ?? sourceIp;
-      const namespace = svc.metadata?.namespace ?? "default";
-      return {
-        name: `${namespace}/${svcName}`,
-        ip: sourceIp,
-      };
-    }
-  } catch (err) {
-    console.warn(
-      `[k8s] Failed to resolve IP ${sourceIp}:`,
-      err instanceof Error ? err.message : err,
-    );
+function removePod(pod: k8s.V1Pod): void {
+  const ip = pod.status?.podIP;
+  if (ip) {
+    ipMap.delete(ip);
   }
+}
 
-  return { name: sourceIp, ip: sourceIp };
+/**
+ * Derive the deployment name from the pod's ownerReferences chain.
+ * A Deployment-managed pod is owned by a ReplicaSet whose name is
+ * `<deployment>-<hash>`, so we strip the trailing `-<hash>` suffix.
+ */
+function deploymentNameFromOwnerRefs(pod: k8s.V1Pod): string | undefined {
+  const owner = pod.metadata?.ownerReferences?.find(
+    (ref) => ref.kind === "ReplicaSet",
+  );
+  if (!owner?.name) return undefined;
+  // ReplicaSet name = "<deployment>-<pod-template-hash>"
+  const lastDash = owner.name.lastIndexOf("-");
+  if (lastDash <= 0) return owner.name;
+  return owner.name.substring(0, lastDash);
 }
