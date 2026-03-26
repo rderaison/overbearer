@@ -19,6 +19,10 @@ Overbearer is a transparent MiTM proxy that sits between your services and the A
 - Real tokens live in one place: Overbearer's encrypted vault
 - Full audit trail of which service used which token, when
 
+<p align="center">
+  <img src="docs/screenshots/admin-dashboard.png" alt="Overbearer Dashboard" width="720">
+</p>
+
 ## How
 
 Overbearer performs TLS interception using a private Certificate Authority that you control. It inspects `Authorization: Bearer` and `x-api-key` headers, replacing fake tokens with their real counterparts from an encrypted, in-memory cache.
@@ -36,6 +40,10 @@ Overbearer performs TLS interception using a private Certificate Authority that 
 - **Audit everything**: All proxy traffic is logged to ClickHouse with 90-day retention
 - **Leak detection**: Overbearer flags services that are using real tokens directly, so you can fix them
 - **Encrypted at rest**: Real tokens are AES-256-GCM encrypted in PostgreSQL and in memcached
+
+<p align="center">
+  <img src="docs/screenshots/admin-logs.png" alt="Overbearer Proxy Logs" width="720">
+</p>
 
 ---
 
