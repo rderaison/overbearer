@@ -74,12 +74,9 @@ export async function shutdownK8s(): Promise<void> {
 
 /**
  * Given a source IP address, identify the Kubernetes service/deployment.
- * Fast path: in-memory map from the informer.
- * Slow path: direct API query for IPs not yet seen by the informer.
+ * Instant lookup from the informer map — used for ACL checks and fast paths.
  */
-export async function identifyService(
-  sourceIp: string,
-): Promise<ServiceIdentity> {
+export function identifyService(sourceIp: string): ServiceIdentity {
   if (!k8sAvailable) {
     return { name: sourceIp, ip: sourceIp };
   }
@@ -89,46 +86,50 @@ export async function identifyService(
     return { name: entry.name, ip: entry.ip };
   }
 
-  // Fallback: direct API lookup for pods the informer hasn't seen yet
-  return await lookupPodByIp(sourceIp);
+  return { name: sourceIp, ip: sourceIp };
 }
 
+const PRIVATE_IP_RE = /^(10\.|172\.(1[6-9]|2\d|3[01])\.|192\.168\.)/;
+
 /**
- * Direct API query as a fallback when the informer map misses an IP.
- * This handles the race where a pod connects before the informer
- * processes its add/update event. The result is inserted into the
- * map so subsequent requests are instant.
+ * Resolve a source IP to a service identity for logging purposes.
+ * If the IP isn't in the informer map yet (race at pod startup),
+ * waits up to timeoutMs for the informer to catch up before giving up.
+ * Non-blocking to callers — meant to be awaited only in the log path.
  */
-async function lookupPodByIp(sourceIp: string): Promise<ServiceIdentity> {
-  if (!coreApi) {
+export async function resolveForLog(
+  sourceIp: string,
+  timeoutMs = 5_000,
+): Promise<ServiceIdentity> {
+  if (!k8sAvailable) {
     return { name: sourceIp, ip: sourceIp };
   }
 
-  try {
-    const { body } = await coreApi.listPodForAllNamespaces(
-      undefined,
-      undefined,
-      `status.podIP=${sourceIp}`,
-    );
-
-    // Find the best match — prefer Running pods over others
-    const running = body.items.find((p) => p.status?.phase === "Running");
-    const pod = running ?? body.items[0];
-
-    if (pod) {
-      indexPod(pod);
-      const entry = ipMap.get(sourceIp);
-      if (entry) {
-        return { name: entry.name, ip: entry.ip };
-      }
-    }
-  } catch (err) {
-    console.warn(
-      `[k8s] fallback lookup failed for ${sourceIp}:`,
-      err instanceof Error ? err.message : err,
-    );
+  // Already known — fast path
+  const immediate = ipMap.get(sourceIp);
+  if (immediate) {
+    return { name: immediate.name, ip: immediate.ip };
   }
 
+  // Only wait for private (in-cluster) IPs
+  if (!PRIVATE_IP_RE.test(sourceIp)) {
+    return { name: sourceIp, ip: sourceIp };
+  }
+
+  // Poll the informer map, waiting for the add/update event
+  const start = Date.now();
+  const pollInterval = 250;
+  while (Date.now() - start < timeoutMs) {
+    await new Promise((r) => setTimeout(r, pollInterval));
+    const entry = ipMap.get(sourceIp);
+    if (entry) {
+      const waited = Date.now() - start;
+      console.log(`[k8s] resolved ${sourceIp} -> ${entry.name} after ${waited}ms`);
+      return { name: entry.name, ip: entry.ip };
+    }
+  }
+
+  console.warn(`[k8s] could not resolve ${sourceIp} after ${timeoutMs}ms (${ipMap.size} entries tracked)`);
   return { name: sourceIp, ip: sourceIp };
 }
 

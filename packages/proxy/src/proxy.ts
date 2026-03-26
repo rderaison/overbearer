@@ -5,11 +5,12 @@ import crypto from "node:crypto";
 import pg from "pg";
 import forge from "node-forge";
 import { performMitm } from "./tls/mitm.js";
-import { identifyService } from "./k8s/service-id.js";
+import { identifyService, resolveForLog } from "./k8s/service-id.js";
 import { log, type ProxyLogEntry } from "./logging/clickhouse.js";
 import { lookupFakeToken } from "./token/memcached.js";
 import { isCALoaded, getCACert, getCAKey, onCAChanged } from "./tls/ca.js";
 import { getCertForHost, clearCertCache } from "./tls/cert-cache.js";
+
 import { isServiceAllowed } from "./acl/source-acl.js";
 
 function cleanIp(ip: string): string {
@@ -249,8 +250,8 @@ async function handleHttpProxy(
   try {
     const targetUrl = new URL(clientReq.url!);
 
-    // Identify the service and check ACL before doing any work
-    const serviceIdentity = await identifyService(sourceIp);
+    // Identify the service immediately for ACL check
+    const serviceIdentity = identifyService(sourceIp);
     if (!isServiceAllowed(serviceIdentity.name, serviceIdentity.ip)) {
       console.warn(
         `[proxy] ACL denied HTTP request from ${serviceIdentity.name} (${serviceIdentity.ip}) -> ${targetUrl.hostname}`,
@@ -273,6 +274,9 @@ async function handleHttpProxy(
       clientRes.end(JSON.stringify({ error: "Service not allowed by proxy ACL" }));
       return;
     }
+
+    // Start resolving identity for logging (may wait for informer)
+    const logIdentityPromise = resolveForLog(sourceIp);
 
     // Token replacement on Authorization / x-api-key headers
     let tokenType: string = "none";
@@ -328,19 +332,23 @@ async function handleHttpProxy(
 
         // Only log requests that carry a token
         if (tokenType !== "none") {
-          log({
-            timestamp: new Date(),
-            service_name: serviceIdentity.name,
-            service_ip: serviceIdentity.ip,
-            target_host: targetUrl.hostname,
-            target_path: targetUrl.pathname,
-            method: clientReq.method ?? "GET",
-            token_type: tokenType,
-            token_id: tokenId,
-            token_preview: tokenPreview,
-            token_full: tokenFull,
-            response_status: proxyRes.statusCode ?? 0,
-            latency_ms: performance.now() - start,
+          const responseStatus = proxyRes.statusCode ?? 0;
+          const latencyMs = performance.now() - start;
+          void logIdentityPromise.then((logIdentity) => {
+            log({
+              timestamp: new Date(),
+              service_name: logIdentity.name,
+              service_ip: logIdentity.ip,
+              target_host: targetUrl.hostname,
+              target_path: targetUrl.pathname,
+              method: clientReq.method ?? "GET",
+              token_type: tokenType,
+              token_id: tokenId,
+              token_preview: tokenPreview,
+              token_full: tokenFull,
+              response_status: responseStatus,
+              latency_ms: latencyMs,
+            });
           });
         }
       },
@@ -405,8 +413,8 @@ async function handleConnect(
   });
 
   try {
-    // Identify the K8s service first, then check ACL before MiTM
-    const serviceIdentity = await identifyService(sourceIp);
+    // Identify the K8s service immediately for ACL check
+    const serviceIdentity = identifyService(sourceIp);
 
     if (!isServiceAllowed(serviceIdentity.name, serviceIdentity.ip)) {
       console.warn(
@@ -432,30 +440,33 @@ async function handleConnect(
 
     const mitmResult = await performMitm(clientSocket, targetHost, targetPort);
 
-    const entry: ProxyLogEntry = {
-      timestamp: new Date(),
-      service_name: serviceIdentity.name,
-      service_ip: serviceIdentity.ip,
-      target_host: mitmResult.targetHost,
-      target_path: mitmResult.path,
-      method: mitmResult.method,
-      token_type: mitmResult.tokenResult.type,
-      token_id: mitmResult.tokenResult.tokenId ?? "",
-      token_preview: mitmResult.tokenResult.tokenPreview ?? "",
-      token_full: mitmResult.tokenResult.tokenFull ?? "",
-      response_status: mitmResult.responseStatus,
-      latency_ms: mitmResult.latencyMs,
-    };
-
     // Only log requests that have a token (skip tokenless browsing traffic)
     if (mitmResult.tokenResult.type !== "none") {
-      log(entry);
-    }
+      // Resolve identity for logging — may wait for informer if IP is new
+      const logIdentity = await resolveForLog(sourceIp);
 
-    if (mitmResult.tokenResult.type === "real_direct") {
-      console.warn(
-        `[proxy] WARNING: real token used directly by ${serviceIdentity.name} -> ${mitmResult.targetHost}${mitmResult.path}`,
-      );
+      const entry: ProxyLogEntry = {
+        timestamp: new Date(),
+        service_name: logIdentity.name,
+        service_ip: logIdentity.ip,
+        target_host: mitmResult.targetHost,
+        target_path: mitmResult.path,
+        method: mitmResult.method,
+        token_type: mitmResult.tokenResult.type,
+        token_id: mitmResult.tokenResult.tokenId ?? "",
+        token_preview: mitmResult.tokenResult.tokenPreview ?? "",
+        token_full: mitmResult.tokenResult.tokenFull ?? "",
+        response_status: mitmResult.responseStatus,
+        latency_ms: mitmResult.latencyMs,
+      };
+
+      log(entry);
+
+      if (mitmResult.tokenResult.type === "real_direct") {
+        console.warn(
+          `[proxy] WARNING: real token used directly by ${logIdentity.name} -> ${mitmResult.targetHost}${mitmResult.path}`,
+        );
+      }
     }
   } catch (err) {
     console.error(
