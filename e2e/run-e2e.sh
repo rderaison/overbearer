@@ -17,7 +17,7 @@ NS="${1:?Usage: $0 <namespace> <registry> <tag> <category>}"
 REGISTRY="${2:?}"
 TAG="${3:?}"
 CATEGORY="${4:?}"
-API_INTERNAL="http://overbearer-management.${NS}.svc.cluster.local:3000"
+API_INTERNAL="https://overbearer-management.${NS}.svc.cluster.local:3443"
 PROXY_INTERNAL="http://overbearer-proxy.${NS}.svc.cluster.local:8080"
 PASS=0
 FAIL=0
@@ -46,7 +46,7 @@ wait_for_pods() {
 
 get_session() {
   # Create admin and get session cookie
-  curl -s --retry 5 --retry-delay 2 -c /tmp/ovb-e2e-cookies \
+  curl -sk --retry 5 --retry-delay 2 -c /tmp/ovb-e2e-cookies \
     -X POST -H "Content-Type: application/json" \
     -d '{"username":"e2e-admin","displayName":"E2E Admin"}' \
     "${API_INTERNAL}/api/auth/setup" > /dev/null 2>&1
@@ -289,7 +289,7 @@ kind: Service
 metadata: { name: overbearer-management }
 spec:
   selector: { app: overbearer-management }
-  ports: [{ port: 3000 }]
+  ports: [{ name: http, port: 3000 }, { name: https, port: 3443 }]
 EOF
 
   # Proxy
@@ -331,7 +331,7 @@ kind: Service
 metadata: { name: overbearer-proxy }
 spec:
   selector: { app: overbearer-proxy }
-  ports: [{ port: 8080 }]
+  ports: [{ name: http, port: 8080 }, { name: https, port: 8443 }]
 EOF
 
   echo "  Waiting for Overbearer..."
@@ -347,60 +347,60 @@ api)
   wait_for_pods
 
   # Port-forward management for direct access
-  kubectl -n "$NS" port-forward svc/overbearer-management 13000:3000 &
+  kubectl -n "$NS" port-forward svc/overbearer-management 13000:3443 &
   PF_PID=$!
   sleep 3
-  API="http://localhost:13000"
+  API="https://localhost:13000"
   trap "kill $PF_PID 2>/dev/null" EXIT
 
   echo "  --- Auth & Setup ---"
-  R=$(curl -s -c /tmp/ovb-e2e-cookies -X POST -H "Content-Type: application/json" \
+  R=$(curl -sk -c /tmp/ovb-e2e-cookies -X POST -H "Content-Type: application/json" \
     -d '{"username":"e2e-admin","displayName":"E2E Admin"}' "$API/api/auth/setup")
   check "Create admin" "$R" "e2e-admin"
 
-  R=$(curl -s -b /tmp/ovb-e2e-cookies "$API/api/auth/me")
+  R=$(curl -sk -b /tmp/ovb-e2e-cookies "$API/api/auth/me")
   check "Auth me" "$R" "e2e-admin"
 
-  R=$(curl -s "$API/api/auth/setup-status")
+  R=$(curl -sk "$API/api/auth/setup-status")
   check "Setup status is false" "$R" '"needsSetup":false'
 
-  R=$(curl -s -X POST -H "Content-Type: application/json" \
+  R=$(curl -sk -X POST -H "Content-Type: application/json" \
     -d '{"username":"hacker"}' "$API/api/auth/setup")
   check "Setup blocked" "$R" "already completed"
 
   echo "  --- CA ---"
-  R=$(curl -s -b /tmp/ovb-e2e-cookies -X POST "$API/api/ca/generate")
+  R=$(curl -sk -b /tmp/ovb-e2e-cookies -X POST "$API/api/ca/generate")
   check "Generate CA" "$R" "success"
 
-  R=$(curl -s "$API/api/ca")
+  R=$(curl -sk "$API/api/ca")
   check "CA download (public)" "$R" "BEGIN CERTIFICATE"
 
   echo "  --- Tokens ---"
-  R=$(curl -s -b /tmp/ovb-e2e-cookies -X POST -H "Content-Type: application/json" \
+  R=$(curl -sk -b /tmp/ovb-e2e-cookies -X POST -H "Content-Type: application/json" \
     -d '{"name":"Test Key","provider":"anthropic","realToken":"sk-ant-api03-test-real-key"}' "$API/api/tokens")
   check "Create token" "$R" "fakeToken"
   TID=$(echo "$R" | python3 -c "import sys,json; print(json.load(sys.stdin)['id'])" 2>/dev/null || echo "")
 
-  R=$(curl -s -b /tmp/ovb-e2e-cookies "$API/api/tokens")
+  R=$(curl -sk -b /tmp/ovb-e2e-cookies "$API/api/tokens")
   check "List tokens" "$R" '"status":"active"'
   check "Created by username" "$R" '"createdBy":"e2e-admin"'
   check "Fake token visible" "$R" "fakeToken"
 
   if [ -n "$TID" ]; then
-    R=$(curl -s -b /tmp/ovb-e2e-cookies -X POST -H "Content-Type: application/json" \
+    R=$(curl -sk -b /tmp/ovb-e2e-cookies -X POST -H "Content-Type: application/json" \
       -d '{"realToken":"sk-ant-rotated"}' "$API/api/tokens/${TID}/rotate")
     check "Rotate token" "$R" "success"
 
-    R=$(curl -s -b /tmp/ovb-e2e-cookies -X DELETE "$API/api/tokens/${TID}")
+    R=$(curl -sk -b /tmp/ovb-e2e-cookies -X DELETE "$API/api/tokens/${TID}")
     check "Revoke token" "$R" "success"
   fi
 
   echo "  --- Users ---"
-  R=$(curl -s -b /tmp/ovb-e2e-cookies -X POST -H "Content-Type: application/json" \
+  R=$(curl -sk -b /tmp/ovb-e2e-cookies -X POST -H "Content-Type: application/json" \
     -d '{"username":"viewer","displayName":"Test Viewer","role":"viewer"}' "$API/api/users")
   check "Create user" "$R" "inviteUrl"
 
-  R=$(curl -s -b /tmp/ovb-e2e-cookies "$API/api/users")
+  R=$(curl -sk -b /tmp/ovb-e2e-cookies "$API/api/users")
   check "List users" "$R" "viewer"
 
   echo "  --- RBAC ---"
@@ -414,57 +414,57 @@ const s = new TextEncoder().encode('$JWT_SECRET');
 const t = await new SignJWT({ userId: '$VID', role: 'viewer' })
   .setProtectedHeader({ alg: 'HS256' }).setIssuedAt().setExpirationTime('1h').setIssuer('overbearer').sign(s);
 console.log(t);")
-    R=$(curl -s -b "overbearer_session=$VT" "$API/api/users")
+    R=$(curl -sk -b "overbearer_session=$VT" "$API/api/users")
     check "Viewer cant list users" "$R" "Insufficient permissions"
 
-    R=$(curl -s -b "overbearer_session=$VT" -X POST -H "Content-Type: application/json" \
+    R=$(curl -sk -b "overbearer_session=$VT" -X POST -H "Content-Type: application/json" \
       -d '{"name":"x","provider":"x","realToken":"x"}' "$API/api/tokens")
     check "Viewer cant create tokens" "$R" "Insufficient permissions"
   fi
 
-  R=$(curl -s "$API/api/tokens")
+  R=$(curl -sk "$API/api/tokens")
   check "Unauthed blocked" "$R" "Authentication required"
 
   echo "  --- Logs & Services ---"
-  R=$(curl -s -b /tmp/ovb-e2e-cookies "$API/api/logs")
+  R=$(curl -sk -b /tmp/ovb-e2e-cookies "$API/api/logs")
   check "Logs endpoint" "$R" '"logs"'
 
-  R=$(curl -s -b /tmp/ovb-e2e-cookies "$API/api/services")
+  R=$(curl -sk -b /tmp/ovb-e2e-cookies "$API/api/services")
   check "Services endpoint" "$R" '"services"'
 
   echo "  --- Groups ---"
-  R=$(curl -s -b /tmp/ovb-e2e-cookies -X POST -H "Content-Type: application/json" \
+  R=$(curl -sk -b /tmp/ovb-e2e-cookies -X POST -H "Content-Type: application/json" \
     -d '{"name":"TestGroup","description":"E2E test group"}' "$API/api/groups")
   check "Create group" "$R" "TestGroup"
   GID=$(echo "$R" | python3 -c "import sys,json; print(json.load(sys.stdin)['group']['id'])" 2>/dev/null || echo "")
 
-  R=$(curl -s -b /tmp/ovb-e2e-cookies "$API/api/groups")
+  R=$(curl -sk -b /tmp/ovb-e2e-cookies "$API/api/groups")
   check "List groups" "$R" "TestGroup"
 
   if [ -n "$GID" ]; then
-    R=$(curl -s -b /tmp/ovb-e2e-cookies -X DELETE "$API/api/groups/${GID}")
+    R=$(curl -sk -b /tmp/ovb-e2e-cookies -X DELETE "$API/api/groups/${GID}")
     check "Delete group" "$R" "success"
   fi
 
   echo "  --- Proxy ACLs ---"
-  R=$(curl -s -b /tmp/ovb-e2e-cookies "$API/api/proxy-acls/status")
+  R=$(curl -sk -b /tmp/ovb-e2e-cookies "$API/api/proxy-acls/status")
   check "Proxy ACL status" "$R" '"open"'
 
-  R=$(curl -s -b /tmp/ovb-e2e-cookies -X POST -H "Content-Type: application/json" \
+  R=$(curl -sk -b /tmp/ovb-e2e-cookies -X POST -H "Content-Type: application/json" \
     -d '{"servicePattern":"test/*","description":"e2e test"}' "$API/api/proxy-acls")
   check "Create ACL rule" "$R" "test/*"
   ACID=$(echo "$R" | python3 -c "import sys,json; print(json.load(sys.stdin)['rule']['id'])" 2>/dev/null || echo "")
 
-  R=$(curl -s -b /tmp/ovb-e2e-cookies "$API/api/proxy-acls/status")
+  R=$(curl -sk -b /tmp/ovb-e2e-cookies "$API/api/proxy-acls/status")
   check "Proxy ACL restricted" "$R" '"restricted"'
 
   if [ -n "$ACID" ]; then
-    R=$(curl -s -b /tmp/ovb-e2e-cookies -X DELETE "$API/api/proxy-acls/${ACID}")
+    R=$(curl -sk -b /tmp/ovb-e2e-cookies -X DELETE "$API/api/proxy-acls/${ACID}")
     check "Delete ACL rule" "$R" "success"
   fi
 
   echo "  --- New Services ---"
-  R=$(curl -s -b /tmp/ovb-e2e-cookies "$API/api/services/new")
+  R=$(curl -sk -b /tmp/ovb-e2e-cookies "$API/api/services/new")
   check "New services endpoint" "$R" '"newAssociations"'
 
   echo ""
@@ -478,24 +478,24 @@ proxy)
   wait_for_pods
 
   # Port-forward both services
-  kubectl -n "$NS" port-forward svc/overbearer-management 13000:3000 &
+  kubectl -n "$NS" port-forward svc/overbearer-management 13000:3443 &
   PF1=$!
   kubectl -n "$NS" port-forward svc/overbearer-proxy 18080:8080 &
   PF2=$!
   sleep 3
-  API="http://localhost:13000"
+  API="https://localhost:13000"
   PROXY="http://localhost:18080"
   trap "kill $PF1 $PF2 2>/dev/null" EXIT
 
   # Get an admin session — try setup first, fall back to minting a JWT directly
-  R=$(curl -s -c /tmp/ovb-e2e-cookies -X POST -H "Content-Type: application/json" \
+  R=$(curl -sk -c /tmp/ovb-e2e-cookies -X POST -H "Content-Type: application/json" \
     -d '{"username":"proxy-admin","displayName":"Proxy Admin"}' "$API/api/auth/setup" 2>&1)
   if echo "$R" | grep -q "already completed"; then
     echo "  Setup already done, minting admin JWT..."
     mint_admin_cookie "$API"
   fi
-  curl -s -b /tmp/ovb-e2e-cookies -X POST "$API/api/ca/generate" > /dev/null 2>&1 || true
-  curl -s "$API/api/ca" > /tmp/ovb-e2e-ca.pem
+  curl -sk -b /tmp/ovb-e2e-cookies -X POST "$API/api/ca/generate" > /dev/null 2>&1 || true
+  curl -sk "$API/api/ca" > /tmp/ovb-e2e-ca.pem
 
   # Restart proxy to pick up CA
   kubectl -n "$NS" rollout restart deployment/overbearer-proxy > /dev/null 2>&1
@@ -507,25 +507,25 @@ proxy)
   PF2=$!
   sleep 3
 
-  R=$(curl -s -b /tmp/ovb-e2e-cookies -X POST -H "Content-Type: application/json" \
+  R=$(curl -sk -b /tmp/ovb-e2e-cookies -X POST -H "Content-Type: application/json" \
     -d '{"name":"Proxy Test","provider":"test","realToken":"sk-real-proxy-test-key-999"}' "$API/api/tokens")
   FAKE=$(echo "$R" | python3 -c "import sys,json; print(json.load(sys.stdin)['fakeToken'])" 2>/dev/null || echo "")
 
   echo "  --- Health ---"
-  R=$(curl -s "$PROXY/healthz")
+  R=$(curl -sk "$PROXY/healthz")
   check "Proxy health" "$R" '"ok"'
 
   echo "  --- Token Replacement ---"
   if [ -n "$FAKE" ]; then
-    R=$(curl -s --proxy "$PROXY" --cacert /tmp/ovb-e2e-ca.pem \
+    R=$(curl -sk --proxy "$PROXY" --cacert /tmp/ovb-e2e-ca.pem \
       -H "Authorization: Bearer $FAKE" https://httpbin.org/headers 2>&1)
     check "HTTPS fake→real" "$R" "sk-real-proxy-test-key-999"
 
-    R=$(curl -s --proxy "$PROXY" \
+    R=$(curl -sk --proxy "$PROXY" \
       -H "Authorization: Bearer $FAKE" http://httpbin.org/headers 2>&1)
     check "HTTP fake→real" "$R" "sk-real-proxy-test-key-999"
 
-    R=$(curl -s --proxy "$PROXY" --cacert /tmp/ovb-e2e-ca.pem \
+    R=$(curl -sk --proxy "$PROXY" --cacert /tmp/ovb-e2e-ca.pem \
       -H "x-api-key: $FAKE" https://httpbin.org/headers 2>&1)
     check "x-api-key replacement" "$R" "sk-real-proxy-test-key-999"
   else
@@ -533,12 +533,12 @@ proxy)
   fi
 
   echo "  --- Real Token Detection ---"
-  curl -s --proxy "$PROXY" --cacert /tmp/ovb-e2e-ca.pem \
+  curl -sk --proxy "$PROXY" --cacert /tmp/ovb-e2e-ca.pem \
     -H "Authorization: Bearer sk-real-proxy-test-key-999" \
     https://httpbin.org/get > /dev/null 2>&1
 
   echo "  --- Tokenless Request (not logged) ---"
-  curl -s --proxy "$PROXY" --cacert /tmp/ovb-e2e-ca.pem \
+  curl -sk --proxy "$PROXY" --cacert /tmp/ovb-e2e-ca.pem \
     https://httpbin.org/get > /dev/null 2>&1
 
   # Wait for logs to flush
@@ -575,24 +575,24 @@ ui)
   echo "=== E2E: UI Tests (Puppeteer) ==="
   wait_for_pods
 
-  kubectl -n "$NS" port-forward svc/overbearer-management 13000:3000 &
+  kubectl -n "$NS" port-forward svc/overbearer-management 13000:3443 &
   PF_PID=$!
   sleep 3
   trap "kill $PF_PID 2>/dev/null" EXIT
 
   # Get an admin session — try setup first, fall back to minting a JWT
-  R=$(curl -s -c /tmp/ovb-e2e-cookies -X POST -H "Content-Type: application/json" \
+  R=$(curl -sk -c /tmp/ovb-e2e-cookies -X POST -H "Content-Type: application/json" \
     -d '{"username":"ui-admin","displayName":"UI Admin"}' \
-    "http://localhost:13000/api/auth/setup" 2>&1)
+    "https://localhost:13000/api/auth/setup" 2>&1)
   if echo "$R" | grep -q "already completed"; then
     echo "  Setup already done, minting admin JWT..."
-    mint_admin_cookie "http://localhost:13000"
+    mint_admin_cookie "https://localhost:13000"
   fi
 
   # Extract the session token from the cookie jar for Puppeteer
   SESSION_TOKEN=$(grep overbearer_session /tmp/ovb-e2e-cookies | awk '{print $NF}')
 
-  OVERBEARER_URL="http://localhost:13000" OVERBEARER_SESSION="$SESSION_TOKEN" npx tsx ui-walkthrough.ts 2>&1
+  OVERBEARER_URL="https://localhost:13000" OVERBEARER_SESSION="$SESSION_TOKEN" npx tsx ui-walkthrough.ts 2>&1
   ;;
 
 # ============================================================================
