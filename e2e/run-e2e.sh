@@ -44,6 +44,15 @@ wait_for_pods() {
   done
 }
 
+dump_logs() {
+  echo ""
+  echo "  === Pod logs (last 80 lines) ==="
+  for app in overbearer-management overbearer-proxy; do
+    echo "  --- ${app} ---"
+    kubectl -n "$NS" logs -l "app=${app}" --tail=80 2>&1 || true
+  done
+}
+
 get_session() {
   # Create admin and get session cookie
   curl -sk --retry 5 --retry-delay 2 -c /tmp/ovb-e2e-cookies \
@@ -351,7 +360,7 @@ api)
   PF_PID=$!
   sleep 3
   API="https://localhost:13000"
-  trap "kill $PF_PID 2>/dev/null" EXIT
+  trap 'rc=$?; [ $rc -ne 0 ] && dump_logs; kill $PF_PID 2>/dev/null; exit $rc' EXIT
 
   echo "  --- Auth & Setup ---"
   R=$(curl -sk -c /tmp/ovb-e2e-cookies -X POST -H "Content-Type: application/json" \
@@ -485,7 +494,7 @@ proxy)
   sleep 3
   API="https://localhost:13000"
   PROXY="http://localhost:18080"
-  trap "kill $PF1 $PF2 2>/dev/null" EXIT
+  trap 'rc=$?; [ $rc -ne 0 ] && dump_logs; kill $PF1 $PF2 2>/dev/null; exit $rc' EXIT
 
   # Get an admin session — try setup first, fall back to minting a JWT directly
   R=$(curl -sk -c /tmp/ovb-e2e-cookies -X POST -H "Content-Type: application/json" \
@@ -578,7 +587,7 @@ ui)
   kubectl -n "$NS" port-forward svc/overbearer-management 13000:3443 &
   PF_PID=$!
   sleep 3
-  trap "kill $PF_PID 2>/dev/null" EXIT
+  trap 'rc=$?; [ $rc -ne 0 ] && dump_logs; kill $PF_PID 2>/dev/null; exit $rc' EXIT
 
   # Get an admin session — try setup first, fall back to minting a JWT
   R=$(curl -sk -c /tmp/ovb-e2e-cookies -X POST -H "Content-Type: application/json" \

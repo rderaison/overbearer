@@ -419,7 +419,6 @@ async function handleConnect(
         response_status: 403,
         latency_ms: 0,
       });
-      clientSocket.write("HTTP/1.1 403 Forbidden\r\n\r\n");
       clientSocket.end();
       return;
     }
@@ -456,11 +455,11 @@ async function handleConnect(
       `[proxy] error handling CONNECT to ${target}:`,
       err instanceof Error ? err.message : err,
     );
+    if (!clientSocket.destroyed) {
+      clientSocket.end();
+    }
   } finally {
     concurrentConnections--;
-    if (!clientSocket.destroyed) {
-      clientSocket.destroy();
-    }
   }
 }
 
