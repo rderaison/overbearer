@@ -874,6 +874,10 @@ spec:
               value: "8080"
             - name: TLS_PORT
               value: "8443"
+            - name: POD_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
             - name: PROXY_TLS_HOSTNAMES
               value: "${PROXY_TLS_HOSTNAMES}"
             - name: MEMCACHED_HOST
@@ -983,6 +987,10 @@ spec:
               value: "3000"
             - name: TLS_PORT
               value: "3443"
+            - name: POD_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
             - name: MEMCACHED_HOST
               value: "memcached.${NAMESPACE}.svc.cluster.local:11211"
             - name: CLICKHOUSE_URL

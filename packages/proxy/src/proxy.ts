@@ -168,9 +168,10 @@ async function loadOrGenerateServiceCert(
     // Generate new cert
     const hostname = serviceName;
     const extraHosts = process.env.PROXY_TLS_HOSTNAMES;
+    const ns = process.env.POD_NAMESPACE || "overbearer";
     const altNames: { type: number; value: string }[] = [
       { type: 2, value: hostname },
-      { type: 2, value: `${serviceName}.overbearer.svc.cluster.local` },
+      { type: 2, value: `${serviceName}.${ns}.svc.cluster.local` },
       { type: 2, value: "localhost" },
     ];
     if (extraHosts) {

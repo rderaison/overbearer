@@ -279,7 +279,7 @@ async function getTlsCredentials(): Promise<{ cert: string; key: string; source:
       { name: 'extKeyUsage', serverAuth: true },
       { name: 'subjectAltName', altNames: [
         { type: 2, value: hostname },
-        { type: 2, value: 'overbearer-management.overbearer.svc.cluster.local' },
+        { type: 2, value: `overbearer-management.${process.env.POD_NAMESPACE || 'overbearer'}.svc.cluster.local` },
         { type: 2, value: 'localhost' },
       ]},
     ]);
