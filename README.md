@@ -132,46 +132,51 @@ Because securing storage doesn't solve the real problem. A token stored in an en
 
 ### How do I configure my apps to use Overbearer?
 
-Two steps: trust the proxy's CA certificate, and set the proxy environment variables.
+Two steps: trust the proxy's CA certificate, and route traffic through the proxy.
 
-**1. Get the CA certificate**
-
-Download it from the management console under **Settings → CA Certificate → Download**, or fetch it from the API:
+Download the CA certificate from the management console under **Settings → CA Certificate → Download**, or fetch it from the API:
 
 ```bash
-curl -o overbearer-ca.pem https://overbearer-mgmt.internal/api/v1/ca/certificate
+curl -o overbearer-ca.pem https://<mgmt-hostname>/api/ca
 ```
 
-Then add it to your service's trust store:
+Then add the following to your service's Dockerfile:
 
-```bash
-# Debian/Ubuntu
-sudo cp overbearer-ca.pem /usr/local/share/ca-certificates/overbearer.crt
-sudo update-ca-certificates
+**Alpine-based image**
 
-# Alpine
-cp overbearer-ca.pem /usr/local/share/ca-certificates/overbearer.crt
-update-ca-certificates
+```dockerfile
+# Install the Overbearer CA certificate
+COPY overbearer-ca.pem /usr/local/share/ca-certificates/overbearer.crt
+RUN update-ca-certificates
 
-# RHEL/Fedora
-sudo cp overbearer-ca.pem /etc/pki/ca-trust/source/anchors/overbearer.crt
-sudo update-ca-trust
+# Route all traffic through the Overbearer proxy
+ENV HTTP_PROXY=http://overbearer-proxy:8080 \
+    HTTPS_PROXY=http://overbearer-proxy:8080 \
+    http_proxy=http://overbearer-proxy:8080 \
+    https_proxy=http://overbearer-proxy:8080
 ```
 
-For Node.js, you can also use the `NODE_EXTRA_CA_CERTS` environment variable instead of modifying the system store.
+**Debian/Ubuntu-based image**
 
-**2. Set the proxy environment variables**
+```dockerfile
+# Install the Overbearer CA certificate
+COPY overbearer-ca.pem /usr/local/share/ca-certificates/overbearer.crt
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates \
+    && update-ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
 
-Point your services at the Overbearer proxy by setting all four standard proxy variables:
-
-```bash
-export HTTP_PROXY=http://overbearer-proxy:8080
-export HTTPS_PROXY=http://overbearer-proxy:8080
-export http_proxy=http://overbearer-proxy:8080
-export https_proxy=http://overbearer-proxy:8080
+# Route all traffic through the Overbearer proxy
+ENV HTTP_PROXY=http://overbearer-proxy:8080 \
+    HTTPS_PROXY=http://overbearer-proxy:8080 \
+    http_proxy=http://overbearer-proxy:8080 \
+    https_proxy=http://overbearer-proxy:8080
 ```
 
-Most HTTP clients (curl, Python `requests`, Node.js `axios`/`undici`, Go's `net/http`) respect these variables automatically. Setting both upper- and lower-case variants ensures compatibility across languages and libraries.
+> **Note:** Replace `overbearer-proxy` with the actual DNS name or address of the proxy service in your cluster (e.g., `overbearer-proxy.<namespace>.svc.cluster.local`).
+
+Most HTTP clients (curl, Python `requests`, Node.js `axios`/`undici`, Go's `net/http`) respect the proxy environment variables automatically. Setting both upper- and lower-case variants ensures compatibility across languages and libraries.
+
+For Node.js, you can also use `NODE_EXTRA_CA_CERTS=/usr/local/share/ca-certificates/overbearer.crt` instead of `update-ca-certificates` if you prefer not to modify the system trust store.
 
 ### Is this production ready?
 
