@@ -291,41 +291,45 @@ async function main() {
     inviteTokenBob: string;
   } | undefined;
 
+  // Helper: POST JSON via page.evaluate (single fetch per call to avoid esbuild issues)
+  async function apiPost(path: string, body: Record<string, unknown>): Promise<any> {
+    return page.evaluate(
+      `(async () => {
+        const r = await fetch("${BASE}" + ${JSON.stringify(path)}, {
+          method: "POST", credentials: "include",
+          headers: { "Content-Type": "application/json" },
+          body: ${JSON.stringify(JSON.stringify(body))},
+        });
+        return r.json();
+      })()`,
+    );
+  }
+
   await check('Visibility: admin creates tokens, groups, users', async () => {
-    const res = await page.evaluate(async (base) => {
-      /* eslint-disable -- inline fetches to avoid esbuild __name injection in page.evaluate */
-      const p = { method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' } } as const;
+    const tAlpha = await apiPost('/api/tokens', { name: 'Alpha Key', provider: 'alpha', realToken: 'sk-alpha' });
+    const tBeta  = await apiPost('/api/tokens', { name: 'Beta Key',  provider: 'beta',  realToken: 'sk-beta' });
+    const tGamma = await apiPost('/api/tokens', { name: 'Gamma Key', provider: 'gamma', realToken: 'sk-gamma' });
 
-      const tAlpha = await (await fetch(`${base}/api/tokens`, { ...p, body: JSON.stringify({ name: 'Alpha Key', provider: 'alpha', realToken: 'sk-alpha' }) })).json();
-      const tBeta  = await (await fetch(`${base}/api/tokens`, { ...p, body: JSON.stringify({ name: 'Beta Key',  provider: 'beta',  realToken: 'sk-beta' }) })).json();
-      const tGamma = await (await fetch(`${base}/api/tokens`, { ...p, body: JSON.stringify({ name: 'Gamma Key', provider: 'gamma', realToken: 'sk-gamma' }) })).json();
+    const gAlpha = await apiPost('/api/groups', { name: 'Alpha Team', description: 'Alpha' });
+    const gBeta  = await apiPost('/api/groups', { name: 'Beta Team',  description: 'Beta' });
 
-      const gAlpha = await (await fetch(`${base}/api/groups`, { ...p, body: JSON.stringify({ name: 'Alpha Team', description: 'Alpha' }) })).json();
-      const gBeta  = await (await fetch(`${base}/api/groups`, { ...p, body: JSON.stringify({ name: 'Beta Team',  description: 'Beta' }) })).json();
+    const alice = await apiPost('/api/users', { username: 'alice', displayName: 'Alice', role: 'manager' });
+    const bob   = await apiPost('/api/users', { username: 'bob',   displayName: 'Bob',   role: 'manager' });
 
-      const alice = await (await fetch(`${base}/api/users`, { ...p, body: JSON.stringify({ username: 'alice', displayName: 'Alice', role: 'manager' }) })).json();
-      const bob   = await (await fetch(`${base}/api/users`, { ...p, body: JSON.stringify({ username: 'bob',   displayName: 'Bob',   role: 'manager' }) })).json();
+    await apiPost(`/api/groups/${gAlpha.id}/members`, { userId: alice.id });
+    await apiPost(`/api/groups/${gBeta.id}/members`,  { userId: bob.id });
 
-      await fetch(`${base}/api/groups/${gAlpha.id}/members`, { ...p, body: JSON.stringify({ userId: alice.id }) });
-      await fetch(`${base}/api/groups/${gBeta.id}/members`,  { ...p, body: JSON.stringify({ userId: bob.id }) });
+    await apiPost(`/api/groups/${gAlpha.id}/tokens`, { tokenId: tAlpha.id });
+    await apiPost(`/api/groups/${gBeta.id}/tokens`,  { tokenId: tBeta.id });
+    await apiPost(`/api/groups/${gAlpha.id}/tokens`, { tokenId: tGamma.id });
+    await apiPost(`/api/groups/${gBeta.id}/tokens`,  { tokenId: tGamma.id });
 
-      await fetch(`${base}/api/groups/${gAlpha.id}/tokens`, { ...p, body: JSON.stringify({ tokenId: tAlpha.id }) });
-      await fetch(`${base}/api/groups/${gBeta.id}/tokens`,  { ...p, body: JSON.stringify({ tokenId: tBeta.id }) });
-      await fetch(`${base}/api/groups/${gAlpha.id}/tokens`, { ...p, body: JSON.stringify({ tokenId: tGamma.id }) });
-      await fetch(`${base}/api/groups/${gBeta.id}/tokens`,  { ...p, body: JSON.stringify({ tokenId: tGamma.id }) });
-
-      return {
-        ok: !!(tAlpha.id && tBeta.id && tGamma.id && alice.inviteUrl && bob.inviteUrl),
-        inviteAlice: alice.inviteUrl,
-        inviteBob: bob.inviteUrl,
-      };
-    }, BASE);
-    assert(res.ok, 'Failed to create test resources');
+    assert(tAlpha.id && tBeta.id && tGamma.id && alice.inviteUrl && bob.inviteUrl, 'Failed to create test resources');
 
     visSetup = {
       tokenNames: { alpha: 'Alpha Key', beta: 'Beta Key', gamma: 'Gamma Key' },
-      inviteTokenAlice: res.inviteAlice.split('/invite/')[1],
-      inviteTokenBob: res.inviteBob.split('/invite/')[1],
+      inviteTokenAlice: (alice.inviteUrl as string).split('/invite/')[1],
+      inviteTokenBob: (bob.inviteUrl as string).split('/invite/')[1],
     };
   });
 
