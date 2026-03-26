@@ -333,62 +333,74 @@ async function main() {
     };
   });
 
+  // Helper: save the admin session cookie value, restore it after a callback
+  async function asUser(inviteToken: string, fn: () => Promise<void>): Promise<void> {
+    // Save admin session
+    const cookies = await page.cookies();
+    const adminCookie = cookies.find((c) => c.name === 'overbearer_session');
+    assert(adminCookie !== undefined, 'No admin session cookie found');
+
+    try {
+      // Accept invite (sets new session cookie)
+      const status = await page.evaluate(
+        `(async () => {
+          const r = await fetch("${BASE}/api/invite/${inviteToken}/accept", {
+            method: "POST", credentials: "include",
+          });
+          return r.status;
+        })()`,
+      );
+      assert(status === 200, `Invite accept failed: ${status}`);
+
+      await fn();
+    } finally {
+      // Restore admin session
+      const url = new URL(BASE);
+      await page.deleteCookie({ name: 'overbearer_session', domain: url.hostname });
+      await page.setCookie({
+        name: 'overbearer_session',
+        value: adminCookie!.value,
+        domain: url.hostname,
+        path: '/',
+        httpOnly: true,
+      });
+    }
+  }
+
   await check('Visibility: Alice sees Alpha + Gamma, not Beta', async () => {
     assert(visSetup !== undefined, 'Setup did not complete');
 
-    // Save admin cookies
-    const adminCookies = await page.cookies();
+    await asUser(visSetup!.inviteTokenAlice, async () => {
+      const tokens: string[] = await page.evaluate(
+        `(async () => {
+          const r = await fetch("${BASE}/api/tokens", { credentials: "include" });
+          const data = await r.json();
+          return (data.tokens || []).map(t => t.name);
+        })()`,
+      );
 
-    // Accept Alice's invite (sets her session cookie)
-    const accept = await page.evaluate(async (base, token) => {
-      const r = await fetch(`${base}/api/invite/${token}/accept`, {
-        method: 'POST', credentials: 'include',
-      });
-      return r.status;
-    }, BASE, visSetup!.inviteTokenAlice);
-    assert(accept === 200, `Invite accept failed: ${accept}`);
-
-    // List tokens as Alice
-    const tokens = await page.evaluate(async (base) => {
-      const r = await fetch(`${base}/api/tokens`, { credentials: 'include' });
-      const data = await r.json();
-      return (data.tokens ?? []).map((t: any) => t.name);
-    }, BASE);
-
-    assert(tokens.includes('Alpha Key'), `Alice missing Alpha Key. Sees: ${tokens.join(', ')}`);
-    assert(tokens.includes('Gamma Key'), `Alice missing Gamma Key. Sees: ${tokens.join(', ')}`);
-    assert(!tokens.includes('Beta Key'), `Alice should not see Beta Key. Sees: ${tokens.join(', ')}`);
-
-    // Restore admin session
-    await page.deleteCookie(...adminCookies.map((c) => ({ name: c.name, domain: c.domain })));
-    for (const c of adminCookies) await page.setCookie(c);
+      assert(tokens.includes('Alpha Key'), `Alice missing Alpha Key. Sees: ${tokens.join(', ')}`);
+      assert(tokens.includes('Gamma Key'), `Alice missing Gamma Key. Sees: ${tokens.join(', ')}`);
+      assert(!tokens.includes('Beta Key'), `Alice should not see Beta Key. Sees: ${tokens.join(', ')}`);
+    });
   });
 
   await check('Visibility: Bob sees Beta + Gamma, not Alpha', async () => {
     assert(visSetup !== undefined, 'Setup did not complete');
 
-    const adminCookies = await page.cookies();
+    await asUser(visSetup!.inviteTokenBob, async () => {
+      const tokens: string[] = await page.evaluate(
+        `(async () => {
+          const r = await fetch("${BASE}/api/tokens", { credentials: "include" });
+          const data = await r.json();
+          return (data.tokens || []).map(t => t.name);
+        })()`,
+      );
 
-    const accept = await page.evaluate(async (base, token) => {
-      const r = await fetch(`${base}/api/invite/${token}/accept`, {
-        method: 'POST', credentials: 'include',
-      });
-      return r.status;
-    }, BASE, visSetup!.inviteTokenBob);
-    assert(accept === 200, `Invite accept failed: ${accept}`);
-
-    const tokens = await page.evaluate(async (base) => {
-      const r = await fetch(`${base}/api/tokens`, { credentials: 'include' });
-      const data = await r.json();
-      return (data.tokens ?? []).map((t: any) => t.name);
-    }, BASE);
-
-    assert(tokens.includes('Beta Key'), `Bob missing Beta Key. Sees: ${tokens.join(', ')}`);
-    assert(tokens.includes('Gamma Key'), `Bob missing Gamma Key. Sees: ${tokens.join(', ')}`);
-    assert(!tokens.includes('Alpha Key'), `Bob should not see Alpha Key. Sees: ${tokens.join(', ')}`);
-
-    await page.deleteCookie(...adminCookies.map((c) => ({ name: c.name, domain: c.domain })));
-    for (const c of adminCookies) await page.setCookie(c);
+      assert(tokens.includes('Beta Key'), `Bob missing Beta Key. Sees: ${tokens.join(', ')}`);
+      assert(tokens.includes('Gamma Key'), `Bob missing Gamma Key. Sees: ${tokens.join(', ')}`);
+      assert(!tokens.includes('Alpha Key'), `Bob should not see Alpha Key. Sees: ${tokens.join(', ')}`);
+    });
   });
 
   await check('Visibility: admin sees all tokens', async () => {
