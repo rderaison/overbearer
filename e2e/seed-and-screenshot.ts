@@ -849,6 +849,44 @@ async function takeScreenshots(usersByRole: Record<string, string>): Promise<voi
         );
       }
     }
+
+    // Interactive screenshots (admin only)
+    if (role === 'admin') {
+      // Group detail modal
+      try {
+        await page.goto(`${MGMT_URL}/groups`, { waitUntil: 'networkidle2' });
+        await delay(1000);
+        await page.waitForSelector('button h3', { timeout: 5000 });
+        await page.click('button h3');
+        await page.waitForSelector('[role="dialog"]', { timeout: 5000 });
+        await delay(1000);
+        await page.screenshot({
+          path: `${DOCS_DIR}/screenshots/admin-group-detail.png`,
+          fullPage: true,
+        });
+        console.log('    admin-group-detail.png');
+      } catch (err) {
+        console.error(`    FAILED: admin-group-detail: ${(err as Error).message}`);
+      }
+
+      // Token detail / access modal
+      try {
+        await page.goto(`${MGMT_URL}/tokens`, { waitUntil: 'networkidle2' });
+        await delay(1000);
+        // Click the first data row in the token table
+        await page.waitForSelector('table tbody tr', { timeout: 5000 });
+        await page.click('table tbody tr');
+        await page.waitForSelector('[role="dialog"]', { timeout: 5000 });
+        await delay(1000);
+        await page.screenshot({
+          path: `${DOCS_DIR}/screenshots/admin-token-access.png`,
+          fullPage: true,
+        });
+        console.log('    admin-token-access.png');
+      } catch (err) {
+        console.error(`    FAILED: admin-token-access: ${(err as Error).message}`);
+      }
+    }
   }
 
   await browser.close();

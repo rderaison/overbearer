@@ -14,12 +14,14 @@ This manual walks through every view in the management console.
 - [Role-Based Access](#role-based-access)
 - [Dashboard](#dashboard)
 - [Tokens](#tokens)
+  - [Token Detail & Access Management](#token-detail--access-management)
 - [Token Requests](#token-requests)
 - [Logs](#logs)
 - [Services](#services)
 - [New Activity](#new-activity)
 - [Users](#users)
 - [Groups](#groups)
+  - [Group Detail](#group-detail)
 - [Settings](#settings)
 
 ---
@@ -120,11 +122,6 @@ The Tokens page is the core of Overbearer's secret management. It displays a sor
 | **Access** | Shows which users (blue `@username` badges) and groups (purple badges) have been granted access to this token. |
 | **Used By** | Services that have used this fake token, shown as small code badges. |
 
-### Visibility Rules
-
-- **Admins** see all tokens across the entire organization.
-- **Managers** see tokens they created, plus tokens accessible via their group memberships or direct access grants.
-
 ### Actions
 
 Each active token row has two action buttons in the rightmost column:
@@ -141,6 +138,28 @@ Click the **"+ Create Token"** button in the top right. The modal asks for:
 3. **Real Token** -- the actual API secret. This is encrypted with AES-256-GCM and never stored in plaintext.
 
 After creation, a second modal displays the generated **fake token**. This fake token preserves the prefix of the real token (e.g. `sk-ant-api03-ovb-...`) so target APIs don't reject it on format alone. Copy it and distribute it to the service owners.
+
+### Token Detail & Access Management
+
+![Token detail modal](docs/screenshots/admin-token-access.png)
+
+Clicking any row in the token table opens a **detail modal** showing:
+
+- **Provider** badge and **status** badge (Active / Revoked).
+- The **fake token** value with a copy button.
+- **Created by** and creation date.
+
+Below the token info, two columns let you manage who has access:
+
+- **User Access** -- lists individual users who have been granted access to this token. Click the **+** button to open a dropdown of all users not yet granted access; select one to grant. Click the red **X** next to a user to revoke.
+- **Group Access** -- same pattern for groups. Granting access to a group gives all members of that group access to the token and its logs.
+
+Access changes take effect immediately. The access badges on the main Tokens table update to reflect the new grants.
+
+### Visibility Rules
+
+- **Admins** see all tokens across the entire organization.
+- **Managers** see tokens they created, plus tokens accessible via their group memberships or direct access grants.
 
 ### Search
 
@@ -335,11 +354,26 @@ Groups let you organize users into teams and manage token access in bulk. Each g
 
 Click **"+ Create Group"** and provide a name and optional description.
 
+### Group Detail
+
+![Group detail modal](docs/screenshots/admin-group-detail.png)
+
+Click any group card to open the **detail modal**. The modal has two sections side by side:
+
+- **Members** -- lists all users in the group with their role badge. Click the **user-plus** icon to open a dropdown of users not yet in the group and add one. Click the red **X** next to a member to remove them. The group name and description are editable inline (click to edit).
+- **Token Access** -- lists all tokens granted to this group with their provider badge. Click the **+** icon to open a dropdown of tokens not yet granted and add one. Click the red **X** to revoke a token from the group.
+
+A **Delete Group** button at the bottom of the modal permanently removes the group (with confirmation).
+
 ### Group-Level Token Access
 
-When a token is granted to a group (via the API), all members of that group inherit access. This is used by the Tokens page's access display (the purple badges) and by the log scoping logic for viewers. For example, if the "Platform Engineering" group has 4 members and access to 6 tokens, all 4 members can see logs for those 6 tokens.
+When a token is granted to a group, all members of that group inherit access. This affects:
 
-Group membership is managed via the group detail view (click a group card).
+- **Token visibility** -- managers who are group members see the token on the Tokens page.
+- **Log scoping** -- viewers who are group members see proxy logs for the group's tokens on the Logs page.
+- **Access badges** -- the Tokens page shows purple group badges in the Access column for each group that has access.
+
+For example, if the "Platform Engineering" group has 4 members and access to 6 tokens, all 4 members can see and work with those 6 tokens. Token access can also be granted directly to individual users from the [Token Detail modal](#token-detail--access-management).
 
 ---
 
