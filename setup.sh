@@ -870,6 +870,8 @@ spec:
             - containerPort: 8443
               name: https
           env:
+            - name: NODE_OPTIONS
+              value: "--no-deprecation"
             - name: PORT
               value: "8080"
             - name: TLS_PORT
@@ -1123,7 +1125,7 @@ metadata:
 rules:
   - apiGroups: [""]
     resources: [pods, services, endpoints]
-    verbs: [get, list]
+    verbs: [get, list, watch]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
