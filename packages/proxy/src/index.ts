@@ -68,7 +68,7 @@ async function main(): Promise<void> {
   }
 
   // Watch for CA changes (reload every 30s if changed)
-  startCAWatcher(30_000);
+  startCAWatcher(1_000);
 
   // Start the proxy server
   const port = parseInt(process.env.PORT ?? "8080", 10);

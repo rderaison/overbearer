@@ -89,7 +89,7 @@ function startTlsListener(tlsPort: number): void {
         clearInterval(retryInterval);
         startTlsListener(tlsPort);
       }
-    }, 10_000);
+    }, 1_000);
     retryInterval.unref();
     return;
   }
@@ -380,6 +380,13 @@ async function handleConnect(
 
   const targetPort = parseInt(targetPortStr, 10) || 443;
   const sourceIp = cleanIp(clientSocket.remoteAddress ?? "unknown");
+
+  if (!isCALoaded()) {
+    clientSocket.write("HTTP/1.1 503 Service Unavailable\r\n\r\nOverbearer proxy: CA not yet loaded\r\n");
+    clientSocket.end();
+    concurrentConnections--;
+    return;
+  }
 
   // Acknowledge the CONNECT tunnel
   clientSocket.write(
