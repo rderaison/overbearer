@@ -50,39 +50,217 @@ generate_hex() {
   openssl rand -hex "$1" 2>/dev/null || head -c "$1" /dev/urandom | xxd -p | tr -d '\n' | head -c "$(($1*2))"
 }
 
+show_public_proxy_warning() {
+  echo ""
+  echo -e "${RED}${BOLD}"
+  echo "  ┌──────────────────────────────────────────────────────────────────────┐"
+  echo "  │  WARNING: You are exposing the Overbearer proxy to the internet.    │"
+  echo "  │                                                                      │"
+  echo "  │  Overbearer is designed for PRIVATE infrastructure. An internet-     │"
+  echo "  │  facing proxy allows anyone to route traffic through it.             │"
+  echo "  │                                                                      │"
+  echo "  │  If you proceed, you MUST:                                           │"
+  echo "  │    - Configure proxy source ACLs to restrict which services can      │"
+  echo "  │      connect (Settings > Proxy ACLs in the management UI)            │"
+  echo "  │    - Use firewall rules to limit access to known IP ranges           │"
+  echo "  │    - Monitor the 'New Activity' tab for unexpected clients           │"
+  echo "  │                                                                      │"
+  echo "  │  Consider using an internal/VPC load balancer instead.               │"
+  echo "  └──────────────────────────────────────────────────────────────────────┘"
+  echo -e "${NC}"
+  ask_yn "Do you still want to expose the proxy to the internet?" "n" CONFIRM_PUBLIC
+  if [ "$CONFIRM_PUBLIC" = "no" ]; then
+    echo -e "${GREEN}Good call. Switching proxy to internal load balancer.${NC}"
+    PROXY_LB_SCOPE="internal"
+  fi
+}
+
 # ---------------------------------------------------------------------------
-# Collect configuration
+# Collect configuration: General
 # ---------------------------------------------------------------------------
 
 echo -e "${YELLOW}General${NC}"
 ask "Kubernetes namespace" "overbearer" NAMESPACE
-ask "Container image registry" "ghcr.io/overbearer" REGISTRY
+ask "Container image registry" "ghcr.io/rderaison/overbearer" REGISTRY
 ask "Image tag" "latest" IMAGE_TAG
+
+# ---------------------------------------------------------------------------
+# Kubernetes platform selection
+# ---------------------------------------------------------------------------
+
+echo ""
+echo -e "${YELLOW}Kubernetes Platform${NC}"
+echo ""
+echo -e "  ${BOLD}1)${NC}  GKE       ${DIM}(Google Kubernetes Engine)${NC}"
+echo -e "  ${BOLD}2)${NC}  EKS       ${DIM}(Amazon Elastic Kubernetes Service)${NC}"
+echo -e "  ${BOLD}3)${NC}  AKS       ${DIM}(Azure Kubernetes Service)${NC}"
+echo -e "  ${BOLD}4)${NC}  DOKS      ${DIM}(DigitalOcean Kubernetes)${NC}"
+echo -e "  ${BOLD}5)${NC}  LKE       ${DIM}(Linode / Akamai)${NC}"
+echo -e "  ${BOLD}6)${NC}  Hetzner   ${DIM}(Hetzner Cloud)${NC}"
+echo -e "  ${BOLD}7)${NC}  Scaleway  ${DIM}(Scaleway Kapsule)${NC}"
+echo -e "  ${BOLD}8)${NC}  OVH       ${DIM}(OVH Managed Kubernetes)${NC}"
+echo -e "  ${BOLD}9)${NC}  Vultr     ${DIM}(Vultr Kubernetes Engine)${NC}"
+echo -e "  ${BOLD}10)${NC} Bare Metal ${DIM}(MetalLB / on-prem)${NC}"
+echo -e "  ${BOLD}11)${NC} k3s / k0s ${DIM}(lightweight distributions)${NC}"
+echo -e "  ${BOLD}12)${NC} Other     ${DIM}(custom / self-managed)${NC}"
+echo ""
+ask "Select your platform" "10" K8S_PLATFORM
+
+# Map platform to defaults
+DEFAULT_STORAGE_CLASS=""
+SUPPORTS_INTERNAL_LB="yes"
+LB_NEEDS_USER_IP="no"
+
+case "$K8S_PLATFORM" in
+  1)  # GKE
+    K8S_FLAVOR="gke"
+    DEFAULT_STORAGE_CLASS="standard-rw"
+    ;;
+  2)  # EKS
+    K8S_FLAVOR="eks"
+    DEFAULT_STORAGE_CLASS="gp3"
+    ;;
+  3)  # AKS
+    K8S_FLAVOR="aks"
+    DEFAULT_STORAGE_CLASS="managed-csi"
+    ;;
+  4)  # DOKS
+    K8S_FLAVOR="doks"
+    DEFAULT_STORAGE_CLASS="do-block-storage"
+    SUPPORTS_INTERNAL_LB="no"
+    ;;
+  5)  # LKE
+    K8S_FLAVOR="lke"
+    DEFAULT_STORAGE_CLASS="linode-block-storage-retain"
+    SUPPORTS_INTERNAL_LB="no"
+    ;;
+  6)  # Hetzner
+    K8S_FLAVOR="hetzner"
+    DEFAULT_STORAGE_CLASS="hcloud-volumes"
+    ;;
+  7)  # Scaleway
+    K8S_FLAVOR="scaleway"
+    DEFAULT_STORAGE_CLASS="scw-bssd"
+    ;;
+  8)  # OVH
+    K8S_FLAVOR="ovh"
+    DEFAULT_STORAGE_CLASS="csi-cinder-high-speed"
+    SUPPORTS_INTERNAL_LB="no"
+    ;;
+  9)  # Vultr
+    K8S_FLAVOR="vultr"
+    DEFAULT_STORAGE_CLASS="vultr-block-storage-hdd"
+    ;;
+  10) # Bare Metal
+    K8S_FLAVOR="baremetal"
+    LB_NEEDS_USER_IP="yes"
+    ;;
+  11) # k3s / k0s
+    K8S_FLAVOR="k3s"
+    DEFAULT_STORAGE_CLASS="local-path"
+    LB_NEEDS_USER_IP="yes"
+    ;;
+  12|*) # Other
+    K8S_FLAVOR="other"
+    ;;
+esac
+
+# ---------------------------------------------------------------------------
+# Hostnames
+# ---------------------------------------------------------------------------
 
 echo ""
 echo -e "${YELLOW}Hostnames${NC}"
 ask "Management UI hostname (for TLS & passkeys)" "" MGMT_HOSTNAME
 ask "Proxy hostname" "" PROXY_HOSTNAME
 
+# ---------------------------------------------------------------------------
+# Networking: LoadBalancers
+# ---------------------------------------------------------------------------
+
 echo ""
 echo -e "${YELLOW}Networking${NC}"
-ask_yn "Use LoadBalancer services? (requires MetalLB or cloud LB)" "y" USE_LB
+ask_yn "Use LoadBalancer services?" "y" USE_LB
+
+MGMT_LB_SCOPE="internal"
+PROXY_LB_SCOPE="internal"
 MGMT_LB_IP=""
 PROXY_LB_IP=""
+PROXY_IS_PUBLIC="no"
+
 if [ "$USE_LB" = "yes" ]; then
-  ask "Management LoadBalancer IP (leave empty for auto)" "" MGMT_LB_IP
-  ask "Proxy LoadBalancer IP (leave empty for auto)" "" PROXY_LB_IP
+  # --- Management LB scope ---
+  if [ "$SUPPORTS_INTERNAL_LB" = "yes" ]; then
+    echo ""
+    echo -e "  ${DIM}Management UI load balancer:${NC}"
+    echo -e "    ${BOLD}1)${NC} Internal ${DIM}(VPC / private network -- recommended)${NC}"
+    echo -e "    ${BOLD}2)${NC} External ${DIM}(internet-facing)${NC}"
+    ask "Management LB scope" "1" MGMT_LB_SCOPE_CHOICE
+    case "$MGMT_LB_SCOPE_CHOICE" in
+      2) MGMT_LB_SCOPE="external" ;;
+      *) MGMT_LB_SCOPE="internal" ;;
+    esac
+  else
+    echo -e "  ${DIM}Note: ${K8S_FLAVOR} does not support native internal load balancers.${NC}"
+    echo -e "  ${DIM}Use firewall rules to restrict access to the management UI.${NC}"
+    MGMT_LB_SCOPE="external"
+  fi
+
+  # --- Proxy LB scope ---
+  if [ "$SUPPORTS_INTERNAL_LB" = "yes" ]; then
+    echo ""
+    echo -e "  ${DIM}Proxy load balancer:${NC}"
+    echo -e "    ${BOLD}1)${NC} Internal ${DIM}(VPC / private network -- strongly recommended)${NC}"
+    echo -e "    ${BOLD}2)${NC} External ${DIM}(internet-facing -- dangerous for a proxy)${NC}"
+    ask "Proxy LB scope" "1" PROXY_LB_SCOPE_CHOICE
+    case "$PROXY_LB_SCOPE_CHOICE" in
+      2)
+        PROXY_LB_SCOPE="external"
+        PROXY_IS_PUBLIC="yes"
+        show_public_proxy_warning
+        # Re-check after warning (user may have switched back)
+        [ "$PROXY_LB_SCOPE" = "internal" ] && PROXY_IS_PUBLIC="no"
+        ;;
+      *) PROXY_LB_SCOPE="internal" ;;
+    esac
+  else
+    echo -e "  ${DIM}Note: ${K8S_FLAVOR} does not support native internal load balancers.${NC}"
+    PROXY_LB_SCOPE="external"
+    PROXY_IS_PUBLIC="yes"
+    show_public_proxy_warning
+    [ "$PROXY_LB_SCOPE" = "internal" ] && PROXY_IS_PUBLIC="no"
+  fi
+
+  # --- Static IPs for bare metal / k3s ---
+  if [ "$LB_NEEDS_USER_IP" = "yes" ]; then
+    echo ""
+    echo -e "  ${DIM}Your platform requires you to specify load balancer IP addresses.${NC}"
+    ask "Management LoadBalancer IP" "" MGMT_LB_IP
+    ask "Proxy LoadBalancer IP" "" PROXY_LB_IP
+  fi
 fi
+
+# ---------------------------------------------------------------------------
+# Storage
+# ---------------------------------------------------------------------------
 
 echo ""
 echo -e "${YELLOW}Storage${NC}"
-ask "Storage class (leave empty for emptyDir / testing)" "" STORAGE_CLASS
+if [ -n "$DEFAULT_STORAGE_CLASS" ]; then
+  ask "Storage class" "$DEFAULT_STORAGE_CLASS" STORAGE_CLASS
+else
+  ask "Storage class (leave empty for emptyDir / testing)" "" STORAGE_CLASS
+fi
 POSTGRES_SIZE="5Gi"
 CLICKHOUSE_SIZE="20Gi"
 if [ -n "$STORAGE_CLASS" ]; then
   ask "PostgreSQL volume size" "5Gi" POSTGRES_SIZE
   ask "ClickHouse volume size" "20Gi" CLICKHOUSE_SIZE
 fi
+
+# ---------------------------------------------------------------------------
+# Kafka
+# ---------------------------------------------------------------------------
 
 echo ""
 echo -e "${YELLOW}Kafka${NC}"
@@ -93,6 +271,10 @@ if [ "$USE_KAFKA" = "yes" ]; then
   ask "Kafka broker(s) (comma-separated)" "" KAFKA_BROKERS
   ask "Kafka topic" "$KAFKA_TOPIC" KAFKA_TOPIC
 fi
+
+# ---------------------------------------------------------------------------
+# Scaling
+# ---------------------------------------------------------------------------
 
 echo ""
 echo -e "${YELLOW}Scaling${NC}"
@@ -106,6 +288,101 @@ ask "Proxy max replicas (max for HPA)" "50" PROXY_MAX_REPLICAS
 MASTER_KEY=$(generate_hex 32)
 JWT_SECRET=$(generate_hex 32)
 PG_PASSWORD=$(generate_hex 16)
+
+# ---------------------------------------------------------------------------
+# Build annotations based on platform and scope
+# ---------------------------------------------------------------------------
+
+# Returns the YAML annotations block for a LoadBalancer service.
+# Usage: build_lb_annotations <scope> <static_ip>
+#   scope: "internal" or "external"
+#   static_ip: IP address or "" for auto-assignment
+build_lb_annotations() {
+  local scope="$1"
+  local static_ip="$2"
+  local annotations=""
+  local lb_ip_field=""
+
+  case "$K8S_FLAVOR" in
+    gke)
+      if [ "$scope" = "internal" ]; then
+        annotations="    networking.gke.io/load-balancer-type: \"Internal\""
+      fi
+      [ -n "$static_ip" ] && lb_ip_field="  loadBalancerIP: ${static_ip}"
+      ;;
+    eks)
+      if [ "$scope" = "internal" ]; then
+        annotations="    service.beta.kubernetes.io/aws-load-balancer-scheme: internal
+    service.beta.kubernetes.io/aws-load-balancer-type: nlb"
+      else
+        annotations="    service.beta.kubernetes.io/aws-load-balancer-scheme: internet-facing
+    service.beta.kubernetes.io/aws-load-balancer-type: nlb"
+      fi
+      ;;
+    aks)
+      if [ "$scope" = "internal" ]; then
+        annotations="    service.beta.kubernetes.io/azure-load-balancer-internal: \"true\""
+      fi
+      [ -n "$static_ip" ] && lb_ip_field="  loadBalancerIP: ${static_ip}"
+      ;;
+    doks)
+      # DigitalOcean does not support internal LBs natively
+      annotations="    service.beta.kubernetes.io/do-loadbalancer-size-unit: \"1\"
+    service.beta.kubernetes.io/do-loadbalancer-disable-lets-encrypt-dns-records: \"true\""
+      ;;
+    lke)
+      annotations="    service.beta.kubernetes.io/linode-loadbalancer-throttle: \"20\""
+      ;;
+    hetzner)
+      if [ "$scope" = "internal" ]; then
+        annotations="    load-balancer.hetzner.cloud/use-private-ip: \"true\""
+      fi
+      if [ -n "$static_ip" ]; then
+        annotations="${annotations:+${annotations}
+}    load-balancer.hetzner.cloud/ipv4: \"${static_ip}\""
+      fi
+      ;;
+    scaleway)
+      if [ "$scope" = "internal" ]; then
+        annotations="    service.beta.kubernetes.io/scw-loadbalancer-type: inner"
+      fi
+      ;;
+    ovh)
+      # OVH has limited internal LB support
+      [ -n "$static_ip" ] && lb_ip_field="  loadBalancerIP: ${static_ip}"
+      ;;
+    vultr)
+      if [ "$scope" = "internal" ]; then
+        annotations="    service.beta.kubernetes.io/vultr-loadbalancer-private-network: \"true\""
+      fi
+      [ -n "$static_ip" ] && lb_ip_field="  loadBalancerIP: ${static_ip}"
+      ;;
+    baremetal)
+      if [ -n "$static_ip" ]; then
+        annotations="    metallb.universe.tf/loadBalancerIPs: \"${static_ip}\""
+      fi
+      ;;
+    k3s)
+      if [ -n "$static_ip" ]; then
+        annotations="    metallb.universe.tf/loadBalancerIPs: \"${static_ip}\""
+      fi
+      ;;
+    other)
+      [ -n "$static_ip" ] && lb_ip_field="  loadBalancerIP: ${static_ip}"
+      ;;
+  esac
+
+  # Output the metadata annotations block
+  if [ -n "$annotations" ]; then
+    echo "  annotations:"
+    echo "$annotations"
+  fi
+
+  # Output loadBalancerIP as a separate marker (caller puts it in spec)
+  if [ -n "$lb_ip_field" ]; then
+    echo "LB_IP_SPEC:${lb_ip_field}"
+  fi
+}
 
 # ---------------------------------------------------------------------------
 # Create output directory
@@ -336,7 +613,7 @@ data:
         target_host String,
         target_path String,
         method String,
-        token_type Enum8('fake' = 1, 'real_direct' = 2, 'unknown' = 3),
+        token_type Enum8('fake' = 1, 'real_direct' = 2, 'unknown' = 3, 'acl_denied' = 4),
         token_id String DEFAULT '',
         token_preview String DEFAULT '',
         token_encrypted String DEFAULT '',
@@ -669,25 +946,29 @@ spec:
 EOF
 
 # ---------------------------------------------------------------------------
-# Network: Services
+# Network: Services (with platform-specific annotations)
 # ---------------------------------------------------------------------------
 
 MGMT_SVC_TYPE="ClusterIP"
-MGMT_LB_ANNOTATION=""
+MGMT_ANNOTATIONS=""
+MGMT_LB_IP_SPEC=""
 PROXY_SVC_TYPE="ClusterIP"
-PROXY_LB_ANNOTATION=""
+PROXY_ANNOTATIONS=""
+PROXY_LB_IP_SPEC=""
 
 if [ "$USE_LB" = "yes" ]; then
   MGMT_SVC_TYPE="LoadBalancer"
   PROXY_SVC_TYPE="LoadBalancer"
-  if [ -n "$MGMT_LB_IP" ]; then
-    MGMT_LB_ANNOTATION="  annotations:
-    metallb.universe.tf/loadBalancerIPs: \"${MGMT_LB_IP}\""
-  fi
-  if [ -n "$PROXY_LB_IP" ]; then
-    PROXY_LB_ANNOTATION="  annotations:
-    metallb.universe.tf/loadBalancerIPs: \"${PROXY_LB_IP}\""
-  fi
+
+  # Build management LB annotations
+  MGMT_RAW=$(build_lb_annotations "$MGMT_LB_SCOPE" "$MGMT_LB_IP")
+  MGMT_ANNOTATIONS=$(echo "$MGMT_RAW" | grep -v "^LB_IP_SPEC:" || true)
+  MGMT_LB_IP_LINE=$(echo "$MGMT_RAW" | grep "^LB_IP_SPEC:" | sed 's/^LB_IP_SPEC://' || true)
+
+  # Build proxy LB annotations
+  PROXY_RAW=$(build_lb_annotations "$PROXY_LB_SCOPE" "$PROXY_LB_IP")
+  PROXY_ANNOTATIONS=$(echo "$PROXY_RAW" | grep -v "^LB_IP_SPEC:" || true)
+  PROXY_LB_IP_LINE=$(echo "$PROXY_RAW" | grep "^LB_IP_SPEC:" | sed 's/^LB_IP_SPEC://' || true)
 fi
 
 cat > "$OUTDIR/network/services.yaml" <<EOF
@@ -699,7 +980,7 @@ metadata:
   labels:
     app: overbearer-management
     app.kubernetes.io/part-of: overbearer
-${MGMT_LB_ANNOTATION}
+${MGMT_ANNOTATIONS}
 spec:
   selector:
     app: overbearer-management
@@ -711,6 +992,7 @@ spec:
       targetPort: 3000
       name: http
   type: ${MGMT_SVC_TYPE}
+${MGMT_LB_IP_LINE}
 ---
 apiVersion: v1
 kind: Service
@@ -720,7 +1002,7 @@ metadata:
   labels:
     app: overbearer-proxy
     app.kubernetes.io/part-of: overbearer
-${PROXY_LB_ANNOTATION}
+${PROXY_ANNOTATIONS}
 spec:
   selector:
     app: overbearer-proxy
@@ -732,6 +1014,7 @@ spec:
       targetPort: 8443
       name: https
   type: ${PROXY_SVC_TYPE}
+${PROXY_LB_IP_LINE}
 EOF
 
 # ---------------------------------------------------------------------------
@@ -774,6 +1057,12 @@ EOF
 
 echo ""
 echo -e "${GREEN}${BOLD}Manifests generated successfully!${NC}"
+echo ""
+echo -e "  ${DIM}Platform: ${K8S_FLAVOR}${NC}"
+if [ "$USE_LB" = "yes" ]; then
+  echo -e "  ${DIM}Management LB: ${MGMT_LB_SCOPE}${NC}"
+  echo -e "  ${DIM}Proxy LB: ${PROXY_LB_SCOPE}${NC}"
+fi
 echo ""
 echo -e "  ${OUTDIR}/"
 echo -e "  ├── 01-namespace.yaml"
@@ -821,6 +1110,14 @@ echo ""
 echo "  # Services must trust the Overbearer CA:"
 echo "  curl http://${MGMT_HOSTNAME}/api/ca > overbearer-ca.pem"
 echo ""
+
+if [ "$PROXY_IS_PUBLIC" = "yes" ]; then
+  echo -e "${RED}${BOLD}IMPORTANT:${NC} The proxy is configured with a public IP."
+  echo "  Configure proxy ACLs immediately after first login (Settings → Proxy ACLs)."
+  echo "  Until ACLs are configured, any host on the internet can use the proxy."
+  echo ""
+fi
+
 echo -e "${RED}${BOLD}IMPORTANT:${NC} ${OUTDIR}/02-secrets.yaml contains your encryption keys."
 echo "  Back it up securely and do not commit it to version control."
 echo ""

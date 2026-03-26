@@ -70,13 +70,18 @@ export default async function logRoutes(fastify: FastifyInstance): Promise<void>
       const conditions: string[] = [];
       const params: Record<string, unknown> = {};
 
-      // Viewer role: restrict to tokens they have access to
+      // Viewer role: restrict to tokens they have access to (direct or via groups)
       if (request.userRole === 'viewer') {
         const accessResult = await pgQuery<{ fake_token_hash: string; real_token_hash: string }>(
-          `SELECT t.fake_token_hash, t.real_token_hash
-           FROM token_access ta
-           JOIN token_mappings t ON ta.token_id = t.id
-           WHERE ta.user_id = $1`,
+          `SELECT DISTINCT t.fake_token_hash, t.real_token_hash
+           FROM token_mappings t
+           WHERE t.id IN (
+             SELECT ta.token_id FROM token_access ta WHERE ta.user_id = $1
+             UNION
+             SELECT tga.token_id FROM token_group_access tga
+               JOIN group_members gm ON tga.group_id = gm.group_id
+               WHERE gm.user_id = $1
+           )`,
           [request.userId],
         );
 

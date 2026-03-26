@@ -17,7 +17,9 @@ import { Tokens } from './pages/Tokens';
 import { TokenRequests } from './pages/TokenRequests';
 import { Logs } from './pages/Logs';
 import { Services } from './pages/Services';
+import { NewActivity } from './pages/NewActivity';
 import { UsersPage } from './pages/Users';
+import { GroupsPage } from './pages/Groups';
 import { SettingsPage } from './pages/Settings';
 import { InvitePage } from './pages/Invite';
 
@@ -115,7 +117,9 @@ export function App() {
             <Route path="token-requests" element={<TokenRequests />} />
             <Route path="logs" element={<Logs />} />
             <Route path="services" element={<Services />} />
+            <Route path="new-activity" element={<NewActivity />} />
             <Route path="users" element={<UsersPage />} />
+            <Route path="groups" element={<GroupsPage />} />
             <Route path="settings" element={<SettingsPage />} />
           </Route>
 

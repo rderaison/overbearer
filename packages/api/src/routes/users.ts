@@ -32,12 +32,23 @@ export default async function userRoutes(fastify: FastifyInstance): Promise<void
          ORDER BY created_at ASC`,
       );
 
+      // Fetch group memberships for all users
+      const groupResult = await query<{ user_id: string; group_id: string; group_name: string }>(
+        `SELECT gm.user_id, gm.group_id, g.name as group_name
+         FROM group_members gm JOIN groups g ON gm.group_id = g.id`,
+      );
+      const userGroups: Record<string, { id: string; name: string }[]> = {};
+      for (const row of groupResult.rows) {
+        (userGroups[row.user_id] ??= []).push({ id: row.group_id, name: row.group_name });
+      }
+
       return reply.send({
         users: result.rows.map((u) => ({
           id: u.id,
           username: u.username,
           displayName: u.display_name,
           role: u.role,
+          groups: userGroups[u.id] ?? [],
           createdAt: u.created_at,
           updatedAt: u.updated_at,
         })),

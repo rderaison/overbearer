@@ -45,9 +45,9 @@ export function InvitePage({ onLogin }: { onLogin: (user: any) => void }) {
       // Fetch user info
       const meRes = await fetch('/api/auth/me', { credentials: 'include' });
       const user = await meRes.json();
-      notify('success', `Welcome, ${info?.displayName || info?.username}! You can register a passkey in Settings.`);
+      notify('success', `Welcome, ${info?.displayName || info?.username}! Let's set up your passkey.`);
       onLogin(user);
-      navigate('/');
+      navigate('/settings');
     } catch (err: any) {
       notify('error', err.message);
     } finally {
@@ -115,7 +115,7 @@ export function InvitePage({ onLogin }: { onLogin: (user: any) => void }) {
               </button>
 
               <p className="mt-4 text-xs text-slate-400 dark:text-zinc-600 text-center">
-                After joining, go to Settings to register a passkey for future logins.
+                After joining, you'll be taken to register a passkey for future logins.
               </p>
             </>
           )}

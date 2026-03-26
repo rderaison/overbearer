@@ -104,3 +104,55 @@ CREATE TABLE IF NOT EXISTS invite_tokens (
 
 CREATE INDEX IF NOT EXISTS idx_invite_token ON invite_tokens(token);
 CREATE INDEX IF NOT EXISTS idx_invite_user ON invite_tokens(user_id);
+
+-- -------------------------------------------------------------------------
+-- Groups & Group Membership
+-- -------------------------------------------------------------------------
+
+CREATE TABLE IF NOT EXISTS groups (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    name VARCHAR(255) UNIQUE NOT NULL,
+    description TEXT,
+    created_by UUID REFERENCES users(id),
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS group_members (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    group_id UUID NOT NULL REFERENCES groups(id) ON DELETE CASCADE,
+    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    added_by UUID REFERENCES users(id),
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    UNIQUE(group_id, user_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_group_members_group ON group_members(group_id);
+CREATE INDEX IF NOT EXISTS idx_group_members_user ON group_members(user_id);
+
+-- Group-level token access (complements user-level token_access)
+CREATE TABLE IF NOT EXISTS token_group_access (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    group_id UUID NOT NULL REFERENCES groups(id) ON DELETE CASCADE,
+    token_id UUID NOT NULL REFERENCES token_mappings(id) ON DELETE CASCADE,
+    granted_by UUID REFERENCES users(id),
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    UNIQUE(group_id, token_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_token_group_access_group ON token_group_access(group_id);
+CREATE INDEX IF NOT EXISTS idx_token_group_access_token ON token_group_access(token_id);
+
+-- -------------------------------------------------------------------------
+-- Proxy Source ACLs
+-- -------------------------------------------------------------------------
+
+-- When this table has entries, only matching sources can use the proxy.
+-- When empty, the proxy is open (default).
+CREATE TABLE IF NOT EXISTS proxy_acls (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    service_pattern VARCHAR(255) NOT NULL,
+    description TEXT,
+    created_by UUID REFERENCES users(id),
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);

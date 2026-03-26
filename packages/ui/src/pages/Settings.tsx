@@ -1,6 +1,6 @@
-import { useState, useEffect, useRef } from 'react';
-import { Download, RefreshCw, Shield, Info, Fingerprint, Check, Upload } from 'lucide-react';
-import { auth, ca } from '../lib/api';
+import { useState, useEffect, useRef, useCallback } from 'react';
+import { Download, RefreshCw, Shield, Info, Fingerprint, Check, Upload, AlertTriangle, Trash2, Plus } from 'lucide-react';
+import { auth, ca, proxyAcls, type ProxyAcl } from '../lib/api';
 import { ConfirmDialog } from '../components/ConfirmDialog';
 import { useNotification } from '../components/Notification';
 
@@ -68,6 +68,66 @@ export function SettingsPage() {
       notify('error', err?.message ?? 'Failed to upload CA.');
     } finally {
       setUploading(false);
+    }
+  };
+
+  // -- Proxy ACL state ---------------------------------------------------------
+  const [aclMode, setAclMode] = useState<'open' | 'restricted'>('open');
+  const [aclRules, setAclRules] = useState<ProxyAcl[]>([]);
+  const [aclLoading, setAclLoading] = useState(true);
+  const [newPattern, setNewPattern] = useState('');
+  const [newDescription, setNewDescription] = useState('');
+  const [addingRule, setAddingRule] = useState(false);
+  const [deletingRuleId, setDeletingRuleId] = useState<string | null>(null);
+
+  const loadAcls = useCallback(async () => {
+    try {
+      const [statusRes, listRes] = await Promise.all([
+        proxyAcls.status(),
+        proxyAcls.list(),
+      ]);
+      setAclMode(statusRes.mode);
+      setAclRules(listRes.rules);
+    } catch {
+      // ignore
+    } finally {
+      setAclLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadAcls();
+  }, [loadAcls]);
+
+  const handleAddRule = async () => {
+    if (!newPattern.trim()) return;
+    setAddingRule(true);
+    try {
+      await proxyAcls.create({
+        servicePattern: newPattern.trim(),
+        description: newDescription.trim() || undefined,
+      });
+      notify('success', `ACL rule "${newPattern.trim()}" added.`);
+      setNewPattern('');
+      setNewDescription('');
+      loadAcls();
+    } catch (err: any) {
+      notify('error', err?.message ?? 'Failed to add rule.');
+    } finally {
+      setAddingRule(false);
+    }
+  };
+
+  const handleDeleteRule = async (rule: ProxyAcl) => {
+    setDeletingRuleId(rule.id);
+    try {
+      await proxyAcls.delete(rule.id);
+      notify('success', `Rule "${rule.servicePattern}" deleted.`);
+      loadAcls();
+    } catch (err: any) {
+      notify('error', err?.message ?? 'Failed to delete rule.');
+    } finally {
+      setDeletingRuleId(null);
     }
   };
 
@@ -233,6 +293,125 @@ export function SettingsPage() {
                 </button>
               </div>
             </div>
+          )}
+        </div>
+      </div>
+
+      {/* Proxy Access Control */}
+      <div className="card">
+        <div className="flex items-center gap-3 border-b border-slate-200 dark:border-zinc-800 px-5 py-4">
+          <Shield className="h-5 w-5 text-brand-600 dark:text-brand-400" />
+          <h2 className="text-sm font-semibold text-slate-900 dark:text-zinc-100">
+            Proxy Access Control
+          </h2>
+          {!aclLoading && (
+            aclMode === 'open' ? (
+              <span className="ml-auto inline-flex items-center text-xs font-medium px-2 py-0.5 rounded-full bg-emerald-50 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-400">
+                Open
+              </span>
+            ) : (
+              <span className="ml-auto inline-flex items-center text-xs font-medium px-2 py-0.5 rounded-full bg-amber-50 dark:bg-amber-500/10 text-amber-700 dark:text-amber-400">
+                Restricted
+              </span>
+            )
+          )}
+        </div>
+        <div className="p-5 space-y-4">
+          {aclLoading ? (
+            <p className="text-sm text-slate-500 dark:text-zinc-500">Loading...</p>
+          ) : (
+            <>
+              <p className="text-sm text-slate-600 dark:text-zinc-400">
+                {aclMode === 'open'
+                  ? 'The proxy accepts connections from any service. Add rules below to restrict access.'
+                  : 'The proxy only accepts connections from services matching the rules below.'}
+              </p>
+
+              {aclMode === 'open' && (
+                <div className="flex items-start gap-3 rounded-lg border border-amber-200 dark:border-amber-500/30 bg-amber-50 dark:bg-amber-500/10 p-4">
+                  <AlertTriangle className="h-5 w-5 text-amber-600 dark:text-amber-400 mt-0.5 shrink-0" />
+                  <p className="text-sm text-amber-800 dark:text-amber-300">
+                    The proxy is currently open — any service can use it. If the proxy is accessible
+                    from the internet, this means anyone can route traffic through Overbearer. Add ACL
+                    rules below to restrict access, or ensure the proxy is only reachable from your
+                    private network.
+                  </p>
+                </div>
+              )}
+
+              {/* Rule list */}
+              {aclRules.length > 0 && (
+                <div className="overflow-x-auto rounded-lg border border-slate-200 dark:border-zinc-700">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="bg-slate-50 dark:bg-zinc-800/50 text-left text-xs font-medium text-slate-500 dark:text-zinc-500">
+                        <th className="px-4 py-2">Pattern</th>
+                        <th className="px-4 py-2">Description</th>
+                        <th className="px-4 py-2">Created</th>
+                        <th className="px-4 py-2 w-10"></th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-200 dark:divide-zinc-700">
+                      {aclRules.map((rule) => (
+                        <tr key={rule.id} className="text-slate-700 dark:text-zinc-300">
+                          <td className="px-4 py-2">
+                            <code className="text-xs font-mono bg-slate-100 dark:bg-zinc-800 px-1.5 py-0.5 rounded">
+                              {rule.servicePattern}
+                            </code>
+                          </td>
+                          <td className="px-4 py-2 text-slate-500 dark:text-zinc-500">
+                            {rule.description || '—'}
+                          </td>
+                          <td className="px-4 py-2 text-slate-500 dark:text-zinc-500 tabular-nums">
+                            {new Date(rule.createdAt).toLocaleDateString()}
+                          </td>
+                          <td className="px-4 py-2">
+                            <button
+                              className="btn-ghost p-1.5 rounded-md text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-500/10"
+                              title="Delete rule"
+                              disabled={deletingRuleId === rule.id}
+                              onClick={() => handleDeleteRule(rule)}
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+
+              {aclRules.length === 0 && (
+                <p className="text-sm text-slate-400 dark:text-zinc-600">
+                  No ACL rules configured.
+                </p>
+              )}
+
+              {/* Add rule form */}
+              <div className="flex flex-col sm:flex-row gap-2">
+                <input
+                  className="input flex-1"
+                  placeholder="e.g., production/*, 10.0.0.0/16"
+                  value={newPattern}
+                  onChange={(e) => setNewPattern(e.target.value)}
+                />
+                <input
+                  className="input flex-1"
+                  placeholder="Description (optional)"
+                  value={newDescription}
+                  onChange={(e) => setNewDescription(e.target.value)}
+                />
+                <button
+                  className="btn-primary shrink-0"
+                  onClick={handleAddRule}
+                  disabled={addingRule || !newPattern.trim()}
+                >
+                  <Plus className="h-4 w-4" />
+                  {addingRule ? 'Adding...' : 'Add Rule'}
+                </button>
+              </div>
+            </>
           )}
         </div>
       </div>

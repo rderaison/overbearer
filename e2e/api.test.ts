@@ -89,10 +89,25 @@ describe('API Route Structure', () => {
     { method: 'GET', path: '/api/ca' },
     { method: 'POST', path: '/api/ca/generate' },
     { method: 'GET', path: '/api/services' },
+    { method: 'GET', path: '/api/groups' },
+    { method: 'POST', path: '/api/groups' },
+    { method: 'GET', path: '/api/groups/:id' },
+    { method: 'PATCH', path: '/api/groups/:id' },
+    { method: 'DELETE', path: '/api/groups/:id' },
+    { method: 'POST', path: '/api/groups/:id/members' },
+    { method: 'DELETE', path: '/api/groups/:id/members/:userId' },
+    { method: 'POST', path: '/api/groups/:id/tokens' },
+    { method: 'DELETE', path: '/api/groups/:id/tokens/:tokenId' },
+    { method: 'GET', path: '/api/proxy-acls' },
+    { method: 'POST', path: '/api/proxy-acls' },
+    { method: 'DELETE', path: '/api/proxy-acls/:id' },
+    { method: 'GET', path: '/api/proxy-acls/status' },
+    { method: 'GET', path: '/api/services/new' },
+    { method: 'POST', path: '/api/tokens/capture' },
   ];
 
   it('should have all expected routes defined', () => {
-    expect(routes.length).toBe(21);
+    expect(routes.length).toBe(36);
   });
 
   it('all auth routes should use POST except /me', () => {
@@ -125,9 +140,60 @@ describe('ClickHouse Log Query Filters', () => {
   });
 
   it('should support token_type filter values', () => {
-    const validTypes = ['fake', 'real_direct', 'unknown'];
+    const validTypes = ['fake', 'real_direct', 'unknown', 'acl_denied'];
     expect(validTypes).toContain('fake');
     expect(validTypes).toContain('real_direct');
     expect(validTypes).toContain('unknown');
+    expect(validTypes).toContain('acl_denied');
+  });
+});
+
+describe('Group and ACL Validation', () => {
+  it('group names should be non-empty and max 255 chars', () => {
+    expect(''.trim().length).toBe(0);
+    expect('a'.repeat(256).length).toBeGreaterThan(255);
+    expect('Engineering Team'.trim().length).toBeGreaterThan(0);
+  });
+
+  it('proxy ACL patterns should support glob and CIDR formats', () => {
+    const globPatterns = ['production/*', 'default/my-app', '*/worker'];
+    const cidrPatterns = ['10.0.0.0/16', '192.168.1.0/24', '172.16.0.0/12'];
+
+    for (const p of globPatterns) {
+      expect(p).toMatch(/[*\/]/);
+    }
+    for (const p of cidrPatterns) {
+      expect(p).toMatch(/^\d+\.\d+\.\d+\.\d+\/\d+$/);
+    }
+  });
+
+  it('CIDR pattern matching should work correctly', () => {
+    // Simple IPv4 parsing and CIDR check
+    function parseIPv4(ip: string): number | null {
+      const parts = ip.split('.');
+      if (parts.length !== 4) return null;
+      let result = 0;
+      for (const part of parts) {
+        const num = parseInt(part, 10);
+        if (isNaN(num) || num < 0 || num > 255) return null;
+        result = (result << 8) | num;
+      }
+      return result >>> 0;
+    }
+
+    function ipInCidr(ip: string, cidr: string): boolean {
+      const [base, prefix] = cidr.split('/');
+      const prefixLen = parseInt(prefix, 10);
+      const ipNum = parseIPv4(ip);
+      const baseNum = parseIPv4(base);
+      if (ipNum === null || baseNum === null) return false;
+      const mask = (~0 << (32 - prefixLen)) >>> 0;
+      return ((ipNum & mask) >>> 0) === ((baseNum & mask) >>> 0);
+    }
+
+    expect(ipInCidr('10.0.1.5', '10.0.0.0/16')).toBe(true);
+    expect(ipInCidr('10.1.0.1', '10.0.0.0/16')).toBe(false);
+    expect(ipInCidr('192.168.1.100', '192.168.1.0/24')).toBe(true);
+    expect(ipInCidr('192.168.2.1', '192.168.1.0/24')).toBe(false);
   });
 });

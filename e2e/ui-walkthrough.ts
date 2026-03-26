@@ -106,6 +106,12 @@ async function main() {
     assert(pageErrors.length === 0, pageErrors.join('; '));
   });
 
+  await check('Passkey banner is visible', async () => {
+    await page.goto(BASE, { waitUntil: 'networkidle2' });
+    const text = await page.evaluate(() => document.body.innerText);
+    assert(text.includes('passkey') || text.includes('Passkey'), 'Expected passkey banner to be visible');
+  });
+
   // -----------------------------------------------------------------------
   // 2. Visit every page
   // -----------------------------------------------------------------------
@@ -119,6 +125,8 @@ async function main() {
     { path: '/services', name: 'Services', expect: 'Service' },
     { path: '/users', name: 'Users', expect: 'User' },
     { path: '/settings', name: 'Settings', expect: 'Settings' },
+    { path: '/new-activity', name: 'New Activity', expect: 'New Activity' },
+    { path: '/groups', name: 'Groups', expect: 'Group' },
   ];
 
   for (const { path, name, expect: expectText } of pages) {
@@ -242,6 +250,90 @@ async function main() {
     assert(res.status === 200, `${res.status}`);
     const users = JSON.parse(res.body).users;
     assert(users?.some((u: any) => u.username === 'testviewer'), `testviewer not found in users list`);
+  });
+
+  // -----------------------------------------------------------------------
+  // 6. Group management
+  // -----------------------------------------------------------------------
+  console.log('\n--- Groups ---');
+
+  await check('Create group', async () => {
+    const res = await page.evaluate(async (base) => {
+      const r = await fetch(`${base}/api/groups`, {
+        method: 'POST', credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: 'Engineering', description: 'Engineering team' }),
+      });
+      return { status: r.status, body: await r.text() };
+    }, BASE);
+    assert(res.status >= 200 && res.status < 300, `${res.status}: ${res.body}`);
+  });
+
+  await check('List groups', async () => {
+    const res = await page.evaluate(async (base) => {
+      const r = await fetch(`${base}/api/groups`, { credentials: 'include' });
+      return { status: r.status, body: await r.text() };
+    }, BASE);
+    assert(res.status === 200, `${res.status}`);
+    const groups = JSON.parse(res.body).groups;
+    assert(groups?.some((g: any) => g.name === 'Engineering'), 'Engineering group not found');
+  });
+
+  // -----------------------------------------------------------------------
+  // 7. Proxy ACLs
+  // -----------------------------------------------------------------------
+  console.log('\n--- Proxy ACLs ---');
+
+  await check('Proxy ACL status is open', async () => {
+    const res = await page.evaluate(async (base) => {
+      const r = await fetch(`${base}/api/proxy-acls/status`, { credentials: 'include' });
+      return { status: r.status, body: await r.text() };
+    }, BASE);
+    assert(res.status === 200, `${res.status}: ${res.body}`);
+    const data = JSON.parse(res.body);
+    assert(data.mode === 'open', `Expected open mode, got ${data.mode}`);
+  });
+
+  await check('Create and delete proxy ACL rule', async () => {
+    const res = await page.evaluate(async (base) => {
+      // Create
+      const cr = await fetch(`${base}/api/proxy-acls`, {
+        method: 'POST', credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ servicePattern: 'production/*', description: 'Prod services' }),
+      });
+      if (cr.status >= 300) return { step: 'create', status: cr.status, body: await cr.text() };
+      const created = await cr.json();
+
+      // Status should now be restricted
+      const sr = await fetch(`${base}/api/proxy-acls/status`, { credentials: 'include' });
+      const status = await sr.json();
+      if (status.mode !== 'restricted') return { step: 'status', status: sr.status, body: `mode=${status.mode}` };
+
+      // Delete
+      const dr = await fetch(`${base}/api/proxy-acls/${created.rule.id}`, {
+        method: 'DELETE', credentials: 'include',
+      });
+      if (dr.status >= 300) return { step: 'delete', status: dr.status, body: await dr.text() };
+
+      return { step: 'done', status: 200, body: 'ok' };
+    }, BASE);
+    assert(res.step === 'done', `Failed at ${res.step}: ${res.status} ${res.body}`);
+  });
+
+  // -----------------------------------------------------------------------
+  // 8. New services endpoint
+  // -----------------------------------------------------------------------
+  console.log('\n--- New Services ---');
+
+  await check('New services endpoint', async () => {
+    const res = await page.evaluate(async (base) => {
+      const r = await fetch(`${base}/api/services/new`, { credentials: 'include' });
+      return { status: r.status, body: await r.text() };
+    }, BASE);
+    assert(res.status === 200, `${res.status}: ${res.body}`);
+    const data = JSON.parse(res.body);
+    assert(Array.isArray(data.newAssociations), 'Expected newAssociations array');
   });
 
   // -----------------------------------------------------------------------

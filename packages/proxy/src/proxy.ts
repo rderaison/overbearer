@@ -10,6 +10,7 @@ import { log, type ProxyLogEntry } from "./logging/clickhouse.js";
 import { lookupFakeToken } from "./token/memcached.js";
 import { isCALoaded, getCACert, getCAKey } from "./tls/ca.js";
 import { getCertForHost } from "./tls/cert-cache.js";
+import { isServiceAllowed } from "./acl/source-acl.js";
 
 function cleanIp(ip: string): string {
   // Strip IPv4-mapped IPv6 prefix
@@ -240,6 +241,31 @@ async function handleHttpProxy(
   try {
     const targetUrl = new URL(clientReq.url!);
 
+    // Identify the service and check ACL before doing any work
+    const serviceIdentity = await identifyService(sourceIp);
+    if (!isServiceAllowed(serviceIdentity.name, serviceIdentity.ip)) {
+      console.warn(
+        `[proxy] ACL denied HTTP request from ${serviceIdentity.name} (${serviceIdentity.ip}) -> ${targetUrl.hostname}`,
+      );
+      log({
+        timestamp: new Date(),
+        service_name: serviceIdentity.name,
+        service_ip: serviceIdentity.ip,
+        target_host: targetUrl.hostname,
+        target_path: targetUrl.pathname,
+        method: clientReq.method ?? "GET",
+        token_type: "acl_denied",
+        token_id: "",
+        token_preview: "",
+        token_full: "",
+        response_status: 403,
+        latency_ms: performance.now() - start,
+      });
+      clientRes.writeHead(403, { "Content-Type": "application/json" });
+      clientRes.end(JSON.stringify({ error: "Service not allowed by proxy ACL" }));
+      return;
+    }
+
     // Token replacement on Authorization / x-api-key headers
     let tokenType: string = "none";
     let tokenId = "";
@@ -294,22 +320,19 @@ async function handleHttpProxy(
 
         // Only log requests that carry a token
         if (tokenType !== "none") {
-          const serviceId = identifyService(sourceIp);
-          void serviceId.then((svc) => {
-            log({
-              timestamp: new Date(),
-              service_name: svc.name,
-              service_ip: svc.ip,
-              target_host: targetUrl.hostname,
-              target_path: targetUrl.pathname,
-              method: clientReq.method ?? "GET",
-              token_type: tokenType,
-              token_id: tokenId,
-              token_preview: tokenPreview,
-              token_full: tokenFull,
-              response_status: proxyRes.statusCode ?? 0,
-              latency_ms: performance.now() - start,
-            });
+          log({
+            timestamp: new Date(),
+            service_name: serviceIdentity.name,
+            service_ip: serviceIdentity.ip,
+            target_host: targetUrl.hostname,
+            target_path: targetUrl.pathname,
+            method: clientReq.method ?? "GET",
+            token_type: tokenType,
+            token_id: tokenId,
+            token_preview: tokenPreview,
+            token_full: tokenFull,
+            response_status: proxyRes.statusCode ?? 0,
+            latency_ms: performance.now() - start,
           });
         }
       },
@@ -367,11 +390,33 @@ async function handleConnect(
   });
 
   try {
-    // Identify the K8s service in parallel with MiTM setup
-    const [serviceIdentity, mitmResult] = await Promise.all([
-      identifyService(sourceIp),
-      performMitm(clientSocket, targetHost, targetPort),
-    ]);
+    // Identify the K8s service first, then check ACL before MiTM
+    const serviceIdentity = await identifyService(sourceIp);
+
+    if (!isServiceAllowed(serviceIdentity.name, serviceIdentity.ip)) {
+      console.warn(
+        `[proxy] ACL denied CONNECT from ${serviceIdentity.name} (${serviceIdentity.ip}) -> ${target}`,
+      );
+      log({
+        timestamp: new Date(),
+        service_name: serviceIdentity.name,
+        service_ip: serviceIdentity.ip,
+        target_host: targetHost,
+        target_path: "",
+        method: "CONNECT",
+        token_type: "acl_denied",
+        token_id: "",
+        token_preview: "",
+        token_full: "",
+        response_status: 403,
+        latency_ms: 0,
+      });
+      clientSocket.write("HTTP/1.1 403 Forbidden\r\n\r\n");
+      clientSocket.end();
+      return;
+    }
+
+    const mitmResult = await performMitm(clientSocket, targetHost, targetPort);
 
     const entry: ProxyLogEntry = {
       timestamp: new Date(),

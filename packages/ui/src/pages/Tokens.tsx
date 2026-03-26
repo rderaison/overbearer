@@ -352,6 +352,37 @@ export function Tokens() {
       },
     },
     {
+      key: 'accessibleBy',
+      header: 'Access',
+      render: (t: any) => {
+        const users = (t.accessibleBy?.users ?? []) as { id: string; username: string }[];
+        const groups = (t.accessibleBy?.groups ?? []) as { id: string; name: string }[];
+        if (users.length === 0 && groups.length === 0) {
+          return <span className="text-slate-400 dark:text-zinc-600 text-xs">No access grants</span>;
+        }
+        return (
+          <div className="flex flex-wrap gap-1">
+            {users.map((u) => (
+              <span
+                key={u.id}
+                className="inline-flex items-center text-[10px] font-medium px-1.5 py-0.5 rounded bg-blue-50 dark:bg-blue-500/10 text-blue-700 dark:text-blue-400"
+              >
+                @{u.username}
+              </span>
+            ))}
+            {groups.map((g) => (
+              <span
+                key={g.id}
+                className="inline-flex items-center text-[10px] font-medium px-1.5 py-0.5 rounded bg-purple-50 dark:bg-purple-500/10 text-purple-700 dark:text-purple-400"
+              >
+                {g.name}
+              </span>
+            ))}
+          </div>
+        );
+      },
+    },
+    {
       key: 'services',
       header: 'Used By',
       render: (t: any) => {

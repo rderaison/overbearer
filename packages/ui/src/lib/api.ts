@@ -89,6 +89,10 @@ export interface Token {
   createdByUsername?: string;
   lastUsedAt: string | null;
   createdAt: string;
+  accessibleBy?: {
+    users: { id: string; username: string }[];
+    groups: { id: string; name: string }[];
+  };
 }
 
 export interface TokenCreateResult {
@@ -345,6 +349,111 @@ export const ca = {
 export const services = {
   list() {
     return get<{ services: Service[] }>('/api/services');
+  },
+
+  newAssociations(hours?: number) {
+    const qs = hours ? `?hours=${hours}` : '';
+    return get<{ newAssociations: NewAssociation[]; hours: number }>(`/api/services/new${qs}`);
+  },
+};
+
+// ---------------------------------------------------------------------------
+// Groups
+// ---------------------------------------------------------------------------
+
+export interface Group {
+  id: string;
+  name: string;
+  description: string | null;
+  memberCount: number;
+  tokenCount: number;
+  createdAt: string;
+}
+
+export interface GroupDetail extends Group {
+  members: { id: string; username: string; displayName: string; role: Role }[];
+  tokens: { id: string; name: string; provider: string | null }[];
+}
+
+export interface NewAssociation {
+  serviceName: string;
+  tokenId: string;
+  tokenName: string;
+  provider: string | null;
+  firstSeen: string;
+  requestCount: number;
+  knownServiceCount: number;
+  knownServices: string[];
+}
+
+export const groups = {
+  list() {
+    return get<{ groups: Group[] }>('/api/groups');
+  },
+
+  get(id: string) {
+    return get<{ group: GroupDetail }>(`/api/groups/${id}`);
+  },
+
+  create(data: { name: string; description?: string }) {
+    return post<{ group: Group }>('/api/groups', data);
+  },
+
+  update(id: string, data: { name?: string; description?: string }) {
+    return request<{ group: Group }>(`/api/groups/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    });
+  },
+
+  delete(id: string) {
+    return del<void>(`/api/groups/${id}`);
+  },
+
+  addMember(groupId: string, userId: string) {
+    return post<void>(`/api/groups/${groupId}/members`, { userId });
+  },
+
+  removeMember(groupId: string, userId: string) {
+    return del<void>(`/api/groups/${groupId}/members/${userId}`);
+  },
+
+  grantToken(groupId: string, tokenId: string) {
+    return post<void>(`/api/groups/${groupId}/tokens`, { tokenId });
+  },
+
+  revokeToken(groupId: string, tokenId: string) {
+    return del<void>(`/api/groups/${groupId}/tokens/${tokenId}`);
+  },
+};
+
+// ---------------------------------------------------------------------------
+// Proxy ACLs
+// ---------------------------------------------------------------------------
+
+export interface ProxyAcl {
+  id: string;
+  servicePattern: string;
+  description: string | null;
+  createdBy: string;
+  createdAt: string;
+}
+
+export const proxyAcls = {
+  list() {
+    return get<{ rules: ProxyAcl[] }>('/api/proxy-acls');
+  },
+
+  status() {
+    return get<{ mode: 'open' | 'restricted'; ruleCount: number }>('/api/proxy-acls/status');
+  },
+
+  create(data: { servicePattern: string; description?: string }) {
+    return post<{ rule: ProxyAcl }>('/api/proxy-acls', data);
+  },
+
+  delete(id: string) {
+    return del<void>(`/api/proxy-acls/${id}`);
   },
 };
 

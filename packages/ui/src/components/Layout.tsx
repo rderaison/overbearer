@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { NavLink, Outlet, useNavigate } from 'react-router-dom';
+import { useState, useEffect } from 'react';
+import { NavLink, Link, Outlet, useNavigate } from 'react-router-dom';
 import {
   LayoutDashboard,
   Key,
@@ -7,11 +7,14 @@ import {
   ScrollText,
   Server,
   Users,
+  UsersRound,
   Settings,
   LogOut,
   Menu,
   X,
   Shield,
+  Radar,
+  Fingerprint,
 } from 'lucide-react';
 import clsx from 'clsx';
 import { ThemeToggle } from './ThemeToggle';
@@ -56,7 +59,14 @@ const navItems: NavItem[] = [
     icon: Server,
     roles: ['admin', 'viewer'],
   },
+  {
+    label: 'New Activity',
+    to: '/new-activity',
+    icon: Radar,
+    roles: ['admin', 'viewer'],
+  },
   { label: 'Users', to: '/users', icon: Users, roles: ['admin'] },
+  { label: 'Groups', to: '/groups', icon: UsersRound, roles: ['admin'] },
   { label: 'Settings', to: '/settings', icon: Settings, roles: ['admin'] },
 ];
 
@@ -75,10 +85,17 @@ interface LayoutProps {
 
 export function Layout({ user, onLogout }: LayoutProps) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [hasPasskey, setHasPasskey] = useState<boolean | null>(null);
   const navigate = useNavigate();
   const { notify } = useNotification();
 
   const items = visibleItems(user.role);
+
+  useEffect(() => {
+    auth.hasPasskey()
+      .then(({ hasPasskey: v }) => setHasPasskey(v))
+      .catch(() => setHasPasskey(null));
+  }, []);
 
   const handleLogout = async () => {
     try {
@@ -190,6 +207,19 @@ export function Layout({ user, onLogout }: LayoutProps) {
 
           <ThemeToggle />
         </header>
+
+        {/* Passkey banner */}
+        {hasPasskey === false && (
+          <div className="flex items-center gap-3 border-b border-amber-200 dark:border-amber-500/30 bg-amber-50 dark:bg-amber-500/10 px-4 py-2.5 lg:px-6">
+            <Fingerprint className="h-4 w-4 text-amber-600 dark:text-amber-400 shrink-0" />
+            <p className="text-sm text-amber-800 dark:text-amber-300">
+              You don't have a passkey yet. Without one, you won't be able to sign in again after your session expires.{' '}
+              <Link to="/settings" className="font-semibold underline underline-offset-2 hover:text-amber-900 dark:hover:text-amber-200">
+                Register a passkey now
+              </Link>
+            </p>
+          </div>
+        )}
 
         {/* Page content */}
         <main className="flex-1 overflow-y-auto p-4 lg:p-6">

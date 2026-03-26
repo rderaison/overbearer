@@ -31,7 +31,7 @@ let kafkaTopic: string;
 // ClickHouse state
 let chClient: any;
 
-const validTypes = new Set(["fake", "real_direct", "unknown"]);
+const validTypes = new Set(["fake", "real_direct", "unknown", "acl_denied"]);
 
 function encryptField(value: string): string {
   if (!masterKey || !value) return value;

@@ -85,6 +85,32 @@ export default async function tokenRoutes(fastify: FastifyInstance): Promise<voi
         // ClickHouse unavailable — skip usage enrichment
       }
 
+      // Fetch access info (users and groups with access to each token)
+      const tokenIds = result.rows.map((t) => t.id);
+      let userAccessMap: Record<string, { id: string; username: string }[]> = {};
+      let groupAccessMap: Record<string, { id: string; name: string }[]> = {};
+      if (tokenIds.length > 0) {
+        const placeholders = tokenIds.map((_, i) => `$${i + 1}`).join(',');
+        const userAccessResult = await query<{ token_id: string; user_id: string; username: string }>(
+          `SELECT ta.token_id, ta.user_id, u.username
+           FROM token_access ta JOIN users u ON ta.user_id = u.id
+           WHERE ta.token_id IN (${placeholders})`,
+          tokenIds,
+        );
+        for (const row of userAccessResult.rows) {
+          (userAccessMap[row.token_id] ??= []).push({ id: row.user_id, username: row.username });
+        }
+        const groupAccessResult = await query<{ token_id: string; group_id: string; group_name: string }>(
+          `SELECT tga.token_id, tga.group_id, g.name as group_name
+           FROM token_group_access tga JOIN groups g ON tga.group_id = g.id
+           WHERE tga.token_id IN (${placeholders})`,
+          tokenIds,
+        );
+        for (const row of groupAccessResult.rows) {
+          (groupAccessMap[row.token_id] ??= []).push({ id: row.group_id, name: row.group_name });
+        }
+      }
+
       return reply.send({
         tokens: result.rows.map((t) => {
           const hashPrefix = t.fake_token_hash.substring(0, 16);
@@ -101,6 +127,10 @@ export default async function tokenRoutes(fastify: FastifyInstance): Promise<voi
             services: usage?.services ?? [],
             revokedAt: t.revoked_at,
             createdAt: t.created_at,
+            accessibleBy: {
+              users: userAccessMap[t.id] ?? [],
+              groups: groupAccessMap[t.id] ?? [],
+            },
           };
         }),
       });
@@ -120,6 +150,7 @@ export default async function tokenRoutes(fastify: FastifyInstance): Promise<voi
         name?: string;
         provider?: string;
         realToken?: string;
+        grantTo?: { users?: string[]; groups?: string[] };
       } | undefined;
 
       if (!body?.name?.trim()) {
@@ -139,6 +170,25 @@ export default async function tokenRoutes(fastify: FastifyInstance): Promise<voi
 
       try {
         const result = await createToken(name, provider, realToken, request.userId!);
+
+        // Grant access to specified users and groups
+        if (body.grantTo?.users?.length) {
+          for (const userId of body.grantTo.users) {
+            await query(
+              `INSERT INTO token_access (user_id, token_id, granted_by) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING`,
+              [userId, result.id, request.userId],
+            ).catch(() => {});
+          }
+        }
+        if (body.grantTo?.groups?.length) {
+          for (const groupId of body.grantTo.groups) {
+            await query(
+              `INSERT INTO token_group_access (group_id, token_id, granted_by) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING`,
+              [groupId, result.id, request.userId],
+            ).catch(() => {});
+          }
+        }
+
         return reply.code(201).send({
           id: result.id,
           name: result.name,

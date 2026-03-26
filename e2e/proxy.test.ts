@@ -162,6 +162,39 @@ describe('Encryption Format', () => {
   });
 });
 
+describe('Source ACL Enforcement', () => {
+  it('should allow all services when no ACL rules exist (open mode)', () => {
+    const rules: string[] = [];
+    function isAllowed(serviceName: string, serviceIp: string): boolean {
+      if (rules.length === 0) return true;
+      return rules.some(pattern => {
+        const regex = new RegExp('^' + pattern.replace(/[.+?^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*') + '$');
+        return regex.test(serviceName) || regex.test(serviceIp);
+      });
+    }
+
+    expect(isAllowed('default/my-app', '10.0.0.1')).toBe(true);
+    expect(isAllowed('any/thing', '192.168.1.1')).toBe(true);
+  });
+
+  it('should restrict services when ACL rules exist', () => {
+    const rules = ['production/*', 'staging/worker'];
+    function isAllowed(serviceName: string): boolean {
+      if (rules.length === 0) return true;
+      return rules.some(pattern => {
+        const regex = new RegExp('^' + pattern.replace(/[.+?^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*') + '$');
+        return regex.test(serviceName);
+      });
+    }
+
+    expect(isAllowed('production/api-gateway')).toBe(true);
+    expect(isAllowed('production/worker')).toBe(true);
+    expect(isAllowed('staging/worker')).toBe(true);
+    expect(isAllowed('staging/api-gateway')).toBe(false);
+    expect(isAllowed('development/anything')).toBe(false);
+  });
+});
+
 describe('TLS Validation', () => {
   it('should reject connections with invalid certificates', async () => {
     // Create a self-signed cert (not trusted)

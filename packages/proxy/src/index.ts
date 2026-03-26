@@ -5,6 +5,7 @@ import {
   shutdownClickHouse,
 } from "./logging/clickhouse.js";
 import { initK8s } from "./k8s/service-id.js";
+import { initSourceAcls, shutdownSourceAcls } from "./acl/source-acl.js";
 import { startProxy, shutdownProxy, getConcurrentConnections } from "./proxy.js";
 
 async function main(): Promise<void> {
@@ -31,6 +32,17 @@ async function main(): Promise<void> {
       err instanceof Error ? err.message : err,
     );
     process.exit(1);
+  }
+
+  // Initialize source ACLs (non-critical; warn but continue)
+  try {
+    await initSourceAcls();
+    console.log("[overbearer] source ACLs initialized");
+  } catch (err) {
+    console.warn(
+      "[overbearer] WARNING: source ACL init failed, ACL enforcement disabled:",
+      err instanceof Error ? err.message : err,
+    );
   }
 
   // Initialize ClickHouse logger (non-critical; warn but continue)
@@ -96,6 +108,16 @@ async function main(): Promise<void> {
     } catch (err) {
       console.error(
         "[overbearer] error shutting down ClickHouse:",
+        err instanceof Error ? err.message : err,
+      );
+    }
+
+    try {
+      await shutdownSourceAcls();
+      console.log("[overbearer] source ACLs shut down");
+    } catch (err) {
+      console.error(
+        "[overbearer] error shutting down source ACLs:",
         err instanceof Error ? err.message : err,
       );
     }

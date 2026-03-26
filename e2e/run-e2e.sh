@@ -195,7 +195,7 @@ data:
     CREATE TABLE IF NOT EXISTS overbearer.proxy_logs (
       timestamp DateTime64(3), service_name String, service_ip String,
       target_host String, target_path String, method String,
-      token_type Enum8('fake'=1,'real_direct'=2,'unknown'=3),
+      token_type Enum8('fake'=1,'real_direct'=2,'unknown'=3,'acl_denied'=4),
       token_id String DEFAULT '', token_preview String DEFAULT '',
       token_encrypted String DEFAULT '', response_status UInt16, latency_ms Float32
     ) ENGINE = MergeTree() PARTITION BY toYYYYMM(timestamp) ORDER BY (timestamp, service_name)
@@ -431,6 +431,41 @@ console.log(t);")
 
   R=$(curl -s -b /tmp/ovb-e2e-cookies "$API/api/services")
   check "Services endpoint" "$R" '"services"'
+
+  echo "  --- Groups ---"
+  R=$(curl -s -b /tmp/ovb-e2e-cookies -X POST -H "Content-Type: application/json" \
+    -d '{"name":"TestGroup","description":"E2E test group"}' "$API/api/groups")
+  check "Create group" "$R" "TestGroup"
+  GID=$(echo "$R" | python3 -c "import sys,json; print(json.load(sys.stdin)['group']['id'])" 2>/dev/null || echo "")
+
+  R=$(curl -s -b /tmp/ovb-e2e-cookies "$API/api/groups")
+  check "List groups" "$R" "TestGroup"
+
+  if [ -n "$GID" ]; then
+    R=$(curl -s -b /tmp/ovb-e2e-cookies -X DELETE "$API/api/groups/${GID}")
+    check "Delete group" "$R" "success"
+  fi
+
+  echo "  --- Proxy ACLs ---"
+  R=$(curl -s -b /tmp/ovb-e2e-cookies "$API/api/proxy-acls/status")
+  check "Proxy ACL status" "$R" '"open"'
+
+  R=$(curl -s -b /tmp/ovb-e2e-cookies -X POST -H "Content-Type: application/json" \
+    -d '{"servicePattern":"test/*","description":"e2e test"}' "$API/api/proxy-acls")
+  check "Create ACL rule" "$R" "test/*"
+  ACID=$(echo "$R" | python3 -c "import sys,json; print(json.load(sys.stdin)['rule']['id'])" 2>/dev/null || echo "")
+
+  R=$(curl -s -b /tmp/ovb-e2e-cookies "$API/api/proxy-acls/status")
+  check "Proxy ACL restricted" "$R" '"restricted"'
+
+  if [ -n "$ACID" ]; then
+    R=$(curl -s -b /tmp/ovb-e2e-cookies -X DELETE "$API/api/proxy-acls/${ACID}")
+    check "Delete ACL rule" "$R" "success"
+  fi
+
+  echo "  --- New Services ---"
+  R=$(curl -s -b /tmp/ovb-e2e-cookies "$API/api/services/new")
+  check "New services endpoint" "$R" '"newAssociations"'
 
   echo ""
   echo "  API Tests: ${PASS} passed, ${FAIL} failed"

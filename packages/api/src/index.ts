@@ -21,6 +21,9 @@ import logRoutes from './routes/logs.js';
 import caRoutes from './routes/ca.js';
 import serviceRoutes from './routes/services.js';
 import tokenRequestRoutes from './routes/token-requests.js';
+import groupRoutes from './routes/groups.js';
+import proxyAclRoutes from './routes/proxy-acls.js';
+import newServiceRoutes from './routes/new-services.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -87,6 +90,9 @@ async function main(): Promise<void> {
   await fastify.register(caRoutes);
   await fastify.register(serviceRoutes);
   await fastify.register(tokenRequestRoutes);
+  await fastify.register(groupRoutes);
+  await fastify.register(proxyAclRoutes);
+  await fastify.register(newServiceRoutes);
 
   // --- Serve static files from UI build directory ---
   // In Docker, UI is at ../public; in dev, at ../../ui/dist
