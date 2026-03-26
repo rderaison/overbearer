@@ -2,7 +2,8 @@ pipeline {
     agent any
 
     environment {
-        REGISTRY           = 'ghcr.io/rderaison/overbearer'
+        REGISTRY           = "${env.OVERBEARER_REGISTRY ?: 'ghcr.io/rderaison/overbearer'}"
+        REGISTRY_CREDS_ID  = "${env.OVERBEARER_REGISTRY_CREDS ?: 'GHCR_IO_LOGIN'}"
         IMAGE_TAG          = "${(env.BRANCH_NAME ?: 'main') == 'main' ? 'latest' : env.BRANCH_NAME + '-' + env.BUILD_NUMBER}"
         DOCKER_API_VERSION = '1.43'
     }
@@ -25,8 +26,19 @@ pipeline {
 
         stage('Push Images') {
             steps {
-                withCredentials([usernamePassword(credentialsId: 'GHCR_IO_LOGIN', usernameVariable: 'USER', passwordVariable: 'TOKEN')]) {
-                    sh 'echo $TOKEN | docker login ghcr.io -u $USER --password-stdin'
+                script {
+                    def registryHost = REGISTRY.split('/')[0]
+                    if (REGISTRY_CREDS_ID == 'DOCKER_SECLIO_REGISTRY') {
+                        // File-based docker config (same as Jenkinsfile.e2e)
+                        withCredentials([file(credentialsId: REGISTRY_CREDS_ID, variable: 'DOCKER_CONFIG_FILE')]) {
+                            sh "mkdir -p \$HOME/.docker && cp \$DOCKER_CONFIG_FILE \$HOME/.docker/config.json"
+                        }
+                    } else {
+                        // Username/password credentials (e.g. GHCR)
+                        withCredentials([usernamePassword(credentialsId: REGISTRY_CREDS_ID, usernameVariable: 'USER', passwordVariable: 'TOKEN')]) {
+                            sh "echo \$TOKEN | docker login ${registryHost} -u \$USER --password-stdin"
+                        }
+                    }
                 }
                 sh "docker push ${REGISTRY}/proxy:${IMAGE_TAG}"
                 sh "docker push ${REGISTRY}/management:${IMAGE_TAG}"
