@@ -5,8 +5,12 @@ export interface ServiceIdentity {
   ip: string;
 }
 
+interface IpEntry extends ServiceIdentity {
+  podUid: string;
+}
+
 /** Pod IP → identity, kept in sync by the informer */
-const ipMap = new Map<string, ServiceIdentity>();
+const ipMap = new Map<string, IpEntry>();
 
 let informer: k8s.Informer<k8s.V1Pod> | undefined;
 let k8sAvailable = true;
@@ -72,13 +76,22 @@ export async function identifyService(
     return { name: sourceIp, ip: sourceIp };
   }
 
-  return ipMap.get(sourceIp) ?? { name: sourceIp, ip: sourceIp };
+  const entry = ipMap.get(sourceIp);
+  if (entry) {
+    return { name: entry.name, ip: entry.ip };
+  }
+  return { name: sourceIp, ip: sourceIp };
 }
 
 function indexPod(pod: k8s.V1Pod): void {
+  const phase = pod.status?.phase;
+  // Only index pods that could be sending traffic
+  if (phase === "Succeeded" || phase === "Failed") return;
+
   const ip = pod.status?.podIP;
   if (!ip) return;
 
+  const uid = pod.metadata?.uid ?? "";
   const namespace = pod.metadata?.namespace ?? "default";
   const labels = pod.metadata?.labels ?? {};
 
@@ -91,12 +104,17 @@ function indexPod(pod: k8s.V1Pod): void {
     pod.metadata?.name ??
     ip;
 
-  ipMap.set(ip, { name: `${namespace}/${name}`, ip });
+  ipMap.set(ip, { name: `${namespace}/${name}`, ip, podUid: uid });
 }
 
 function removePod(pod: k8s.V1Pod): void {
   const ip = pod.status?.podIP;
-  if (ip) {
+  if (!ip) return;
+
+  // Only remove if this pod still owns the IP entry — another pod may
+  // have already claimed it (IP reuse).
+  const existing = ipMap.get(ip);
+  if (existing && existing.podUid === (pod.metadata?.uid ?? "")) {
     ipMap.delete(ip);
   }
 }
