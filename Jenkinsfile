@@ -1,9 +1,14 @@
 pipeline {
     agent any
 
+    parameters {
+        string(name: 'OVERBEARER_REGISTRY', defaultValue: 'ghcr.io/rderaison/overbearer', description: 'Container image registry')
+        string(name: 'OVERBEARER_REGISTRY_CREDS', defaultValue: 'GHCR_IO_LOGIN', description: 'Jenkins credentials ID for docker login')
+    }
+
     environment {
-        REGISTRY           = "${env.OVERBEARER_REGISTRY ?: 'ghcr.io/rderaison/overbearer'}"
-        REGISTRY_CREDS_ID  = "${env.OVERBEARER_REGISTRY_CREDS ?: 'GHCR_IO_LOGIN'}"
+        REGISTRY           = "${params.OVERBEARER_REGISTRY}"
+        REGISTRY_CREDS_ID  = "${params.OVERBEARER_REGISTRY_CREDS}"
         IMAGE_TAG          = "${(env.BRANCH_NAME ?: 'main') == 'main' ? 'latest' : env.BRANCH_NAME + '-' + env.BUILD_NUMBER}"
         DOCKER_API_VERSION = '1.43'
     }
