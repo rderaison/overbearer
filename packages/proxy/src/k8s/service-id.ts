@@ -20,7 +20,7 @@ let k8sAvailable = true;
  * The informer watches all pods across namespaces and maintains
  * a live IP → service identity map for fast lookups.
  */
-export function initK8s(): void {
+export async function initK8s(): Promise<void> {
   try {
     const kc = new k8s.KubeConfig();
     try {
@@ -37,15 +37,21 @@ export function initK8s(): void {
     informer.on("add", (pod) => indexPod(pod));
     informer.on("update", (pod) => indexPod(pod));
     informer.on("delete", (pod) => removePod(pod));
+    informer.on("connect", () => {
+      console.log(`[k8s] informer connected, tracking ${ipMap.size} pod IPs`);
+    });
     informer.on("error", (err) => {
       console.warn("[k8s] informer error:", err instanceof Error ? err.message : err);
       // Restart the informer after a brief delay
       setTimeout(() => {
-        informer?.start();
+        informer?.start().catch((e: unknown) => {
+          console.warn("[k8s] informer restart failed:", e instanceof Error ? e.message : e);
+        });
       }, 5_000);
     });
 
-    informer.start();
+    await informer.start();
+    console.log(`[k8s] informer started, indexed ${ipMap.size} pod IPs`);
   } catch (err) {
     console.warn(
       "[k8s] Could not initialize Kubernetes client, service identification disabled:",

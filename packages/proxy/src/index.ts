@@ -58,7 +58,7 @@ async function main(): Promise<void> {
 
   // Initialize Kubernetes service identification (non-critical)
   try {
-    initK8s();
+    await initK8s();
     console.log("[overbearer] Kubernetes client initialized");
   } catch (err) {
     console.warn(
