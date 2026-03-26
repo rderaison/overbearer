@@ -293,35 +293,31 @@ async function main() {
 
   await check('Visibility: admin creates tokens, groups, users', async () => {
     const res = await page.evaluate(async (base) => {
-      const post = (url: string, body: unknown) =>
-        fetch(`${base}${url}`, {
-          method: 'POST', credentials: 'include',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(body),
-        }).then((r) => r.json());
+      const h = { 'Content-Type': 'application/json' };
+      const opts = (body: unknown) => ({ method: 'POST' as const, credentials: 'include' as const, headers: h, body: JSON.stringify(body) });
 
       // Create 3 tokens
-      const tAlpha = await post('/api/tokens', { name: 'Alpha Key', provider: 'alpha', realToken: 'sk-alpha' });
-      const tBeta  = await post('/api/tokens', { name: 'Beta Key',  provider: 'beta',  realToken: 'sk-beta' });
-      const tGamma = await post('/api/tokens', { name: 'Gamma Key', provider: 'gamma', realToken: 'sk-gamma' });
+      const tAlpha = await (await fetch(`${base}/api/tokens`, opts({ name: 'Alpha Key', provider: 'alpha', realToken: 'sk-alpha' }))).json();
+      const tBeta  = await (await fetch(`${base}/api/tokens`, opts({ name: 'Beta Key',  provider: 'beta',  realToken: 'sk-beta' }))).json();
+      const tGamma = await (await fetch(`${base}/api/tokens`, opts({ name: 'Gamma Key', provider: 'gamma', realToken: 'sk-gamma' }))).json();
 
       // Create 2 groups
-      const gAlpha = await post('/api/groups', { name: 'Alpha Team', description: 'Alpha' });
-      const gBeta  = await post('/api/groups', { name: 'Beta Team',  description: 'Beta' });
+      const gAlpha = await (await fetch(`${base}/api/groups`, opts({ name: 'Alpha Team', description: 'Alpha' }))).json();
+      const gBeta  = await (await fetch(`${base}/api/groups`, opts({ name: 'Beta Team',  description: 'Beta' }))).json();
 
       // Create 2 manager users (need manager role to list tokens)
-      const alice = await post('/api/users', { username: 'alice', displayName: 'Alice', role: 'manager' });
-      const bob   = await post('/api/users', { username: 'bob',   displayName: 'Bob',   role: 'manager' });
+      const alice = await (await fetch(`${base}/api/users`, opts({ username: 'alice', displayName: 'Alice', role: 'manager' }))).json();
+      const bob   = await (await fetch(`${base}/api/users`, opts({ username: 'bob',   displayName: 'Bob',   role: 'manager' }))).json();
 
       // Add users to groups
-      await post(`/api/groups/${gAlpha.id}/members`, { userId: alice.id });
-      await post(`/api/groups/${gBeta.id}/members`,  { userId: bob.id });
+      await fetch(`${base}/api/groups/${gAlpha.id}/members`, opts({ userId: alice.id }));
+      await fetch(`${base}/api/groups/${gBeta.id}/members`,  opts({ userId: bob.id }));
 
       // Grant tokens to groups: Alpha→AlphaTeam, Beta→BetaTeam, Gamma→both
-      await post(`/api/groups/${gAlpha.id}/tokens`, { tokenId: tAlpha.id });
-      await post(`/api/groups/${gBeta.id}/tokens`,  { tokenId: tBeta.id });
-      await post(`/api/groups/${gAlpha.id}/tokens`, { tokenId: tGamma.id });
-      await post(`/api/groups/${gBeta.id}/tokens`,  { tokenId: tGamma.id });
+      await fetch(`${base}/api/groups/${gAlpha.id}/tokens`, opts({ tokenId: tAlpha.id }));
+      await fetch(`${base}/api/groups/${gBeta.id}/tokens`,  opts({ tokenId: tBeta.id }));
+      await fetch(`${base}/api/groups/${gAlpha.id}/tokens`, opts({ tokenId: tGamma.id }));
+      await fetch(`${base}/api/groups/${gBeta.id}/tokens`,  opts({ tokenId: tGamma.id }));
 
       return {
         ok: !!(tAlpha.id && tBeta.id && tGamma.id && alice.inviteUrl && bob.inviteUrl),
