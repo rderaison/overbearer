@@ -12,6 +12,7 @@ interface IpEntry extends ServiceIdentity {
 /** Pod IP → identity, kept in sync by the informer */
 const ipMap = new Map<string, IpEntry>();
 
+let coreApi: k8s.CoreV1Api | undefined;
 let informer: k8s.Informer<k8s.V1Pod> | undefined;
 let k8sAvailable = true;
 
@@ -29,8 +30,8 @@ export async function initK8s(): Promise<void> {
       kc.loadFromDefault();
     }
 
-    const coreApi = kc.makeApiClient(k8s.CoreV1Api);
-    const listFn = () => coreApi.listPodForAllNamespaces();
+    coreApi = kc.makeApiClient(k8s.CoreV1Api);
+    const listFn = () => coreApi!.listPodForAllNamespaces();
 
     informer = k8s.makeInformer<k8s.V1Pod>(kc, "/api/v1/pods", listFn);
 
@@ -73,7 +74,8 @@ export async function shutdownK8s(): Promise<void> {
 
 /**
  * Given a source IP address, identify the Kubernetes service/deployment.
- * Uses the in-memory map maintained by the pod informer — no API calls.
+ * Fast path: in-memory map from the informer.
+ * Slow path: direct API query for IPs not yet seen by the informer.
  */
 export async function identifyService(
   sourceIp: string,
@@ -86,7 +88,47 @@ export async function identifyService(
   if (entry) {
     return { name: entry.name, ip: entry.ip };
   }
-  console.warn(`[k8s] IP ${sourceIp} not found in map (${ipMap.size} entries tracked)`);
+
+  // Fallback: direct API lookup for pods the informer hasn't seen yet
+  return await lookupPodByIp(sourceIp);
+}
+
+/**
+ * Direct API query as a fallback when the informer map misses an IP.
+ * This handles the race where a pod connects before the informer
+ * processes its add/update event. The result is inserted into the
+ * map so subsequent requests are instant.
+ */
+async function lookupPodByIp(sourceIp: string): Promise<ServiceIdentity> {
+  if (!coreApi) {
+    return { name: sourceIp, ip: sourceIp };
+  }
+
+  try {
+    const { body } = await coreApi.listPodForAllNamespaces(
+      undefined,
+      undefined,
+      `status.podIP=${sourceIp}`,
+    );
+
+    // Find the best match — prefer Running pods over others
+    const running = body.items.find((p) => p.status?.phase === "Running");
+    const pod = running ?? body.items[0];
+
+    if (pod) {
+      indexPod(pod);
+      const entry = ipMap.get(sourceIp);
+      if (entry) {
+        return { name: entry.name, ip: entry.ip };
+      }
+    }
+  } catch (err) {
+    console.warn(
+      `[k8s] fallback lookup failed for ${sourceIp}:`,
+      err instanceof Error ? err.message : err,
+    );
+  }
+
   return { name: sourceIp, ip: sourceIp };
 }
 
