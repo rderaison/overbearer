@@ -84,6 +84,18 @@ ask "Kubernetes namespace" "overbearer" NAMESPACE
 ask "Container image registry" "ghcr.io/rderaison/overbearer" REGISTRY
 ask "Image tag" "latest" IMAGE_TAG
 
+IMAGE_PULL_SECRET=""
+REGISTRY_HOST="${REGISTRY%%/*}"
+if [ "$REGISTRY_HOST" != "ghcr.io" ] && [ "$REGISTRY_HOST" != "docker.io" ]; then
+  echo ""
+  echo -e "  ${DIM}Private registry detected (${REGISTRY_HOST}).${NC}"
+  echo -e "  ${DIM}If your cluster needs credentials to pull images, provide the name${NC}"
+  echo -e "  ${DIM}of an existing Kubernetes docker-registry secret, or leave empty to skip.${NC}"
+  echo -e "  ${DIM}To create one: kubectl -n ${NAMESPACE} create secret docker-registry <name> \\${NC}"
+  echo -e "  ${DIM}  --docker-server=${REGISTRY_HOST} --docker-username=<user> --docker-password=<pass>${NC}"
+  ask "Image pull secret name (leave empty to skip)" "" IMAGE_PULL_SECRET
+fi
+
 # ---------------------------------------------------------------------------
 # Kubernetes platform selection
 # ---------------------------------------------------------------------------
@@ -800,7 +812,9 @@ spec:
       labels:
         app: overbearer-proxy
     spec:
-      serviceAccountName: overbearer-proxy
+      serviceAccountName: overbearer-proxy${IMAGE_PULL_SECRET:+
+      imagePullSecrets:
+        - name: ${IMAGE_PULL_SECRET}}
       containers:
         - name: proxy
           image: ${REGISTRY}/proxy:${IMAGE_TAG}
@@ -891,7 +905,9 @@ spec:
     metadata:
       labels:
         app: overbearer-management
-    spec:
+    spec:${IMAGE_PULL_SECRET:+
+      imagePullSecrets:
+        - name: ${IMAGE_PULL_SECRET}}
       containers:
         - name: management
           image: ${REGISTRY}/management:${IMAGE_TAG}
@@ -1059,6 +1075,9 @@ echo ""
 echo -e "${GREEN}${BOLD}Manifests generated successfully!${NC}"
 echo ""
 echo -e "  ${DIM}Platform: ${K8S_FLAVOR}${NC}"
+if [ -n "$IMAGE_PULL_SECRET" ]; then
+  echo -e "  ${DIM}Image pull secret: ${IMAGE_PULL_SECRET}${NC}"
+fi
 if [ "$USE_LB" = "yes" ]; then
   echo -e "  ${DIM}Management LB: ${MGMT_LB_SCOPE}${NC}"
   echo -e "  ${DIM}Proxy LB: ${PROXY_LB_SCOPE}${NC}"
