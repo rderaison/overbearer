@@ -293,36 +293,31 @@ async function main() {
 
   await check('Visibility: admin creates tokens, groups, users', async () => {
     const res = await page.evaluate(async (base) => {
-      const h = { 'Content-Type': 'application/json' };
-      const opts = (body: unknown) => ({ method: 'POST' as const, credentials: 'include' as const, headers: h, body: JSON.stringify(body) });
+      /* eslint-disable -- inline fetches to avoid esbuild __name injection in page.evaluate */
+      const p = { method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' } } as const;
 
-      // Create 3 tokens
-      const tAlpha = await (await fetch(`${base}/api/tokens`, opts({ name: 'Alpha Key', provider: 'alpha', realToken: 'sk-alpha' }))).json();
-      const tBeta  = await (await fetch(`${base}/api/tokens`, opts({ name: 'Beta Key',  provider: 'beta',  realToken: 'sk-beta' }))).json();
-      const tGamma = await (await fetch(`${base}/api/tokens`, opts({ name: 'Gamma Key', provider: 'gamma', realToken: 'sk-gamma' }))).json();
+      const tAlpha = await (await fetch(`${base}/api/tokens`, { ...p, body: JSON.stringify({ name: 'Alpha Key', provider: 'alpha', realToken: 'sk-alpha' }) })).json();
+      const tBeta  = await (await fetch(`${base}/api/tokens`, { ...p, body: JSON.stringify({ name: 'Beta Key',  provider: 'beta',  realToken: 'sk-beta' }) })).json();
+      const tGamma = await (await fetch(`${base}/api/tokens`, { ...p, body: JSON.stringify({ name: 'Gamma Key', provider: 'gamma', realToken: 'sk-gamma' }) })).json();
 
-      // Create 2 groups
-      const gAlpha = await (await fetch(`${base}/api/groups`, opts({ name: 'Alpha Team', description: 'Alpha' }))).json();
-      const gBeta  = await (await fetch(`${base}/api/groups`, opts({ name: 'Beta Team',  description: 'Beta' }))).json();
+      const gAlpha = await (await fetch(`${base}/api/groups`, { ...p, body: JSON.stringify({ name: 'Alpha Team', description: 'Alpha' }) })).json();
+      const gBeta  = await (await fetch(`${base}/api/groups`, { ...p, body: JSON.stringify({ name: 'Beta Team',  description: 'Beta' }) })).json();
 
-      // Create 2 manager users (need manager role to list tokens)
-      const alice = await (await fetch(`${base}/api/users`, opts({ username: 'alice', displayName: 'Alice', role: 'manager' }))).json();
-      const bob   = await (await fetch(`${base}/api/users`, opts({ username: 'bob',   displayName: 'Bob',   role: 'manager' }))).json();
+      const alice = await (await fetch(`${base}/api/users`, { ...p, body: JSON.stringify({ username: 'alice', displayName: 'Alice', role: 'manager' }) })).json();
+      const bob   = await (await fetch(`${base}/api/users`, { ...p, body: JSON.stringify({ username: 'bob',   displayName: 'Bob',   role: 'manager' }) })).json();
 
-      // Add users to groups
-      await fetch(`${base}/api/groups/${gAlpha.id}/members`, opts({ userId: alice.id }));
-      await fetch(`${base}/api/groups/${gBeta.id}/members`,  opts({ userId: bob.id }));
+      await fetch(`${base}/api/groups/${gAlpha.id}/members`, { ...p, body: JSON.stringify({ userId: alice.id }) });
+      await fetch(`${base}/api/groups/${gBeta.id}/members`,  { ...p, body: JSON.stringify({ userId: bob.id }) });
 
-      // Grant tokens to groups: Alpha→AlphaTeam, Beta→BetaTeam, Gamma→both
-      await fetch(`${base}/api/groups/${gAlpha.id}/tokens`, opts({ tokenId: tAlpha.id }));
-      await fetch(`${base}/api/groups/${gBeta.id}/tokens`,  opts({ tokenId: tBeta.id }));
-      await fetch(`${base}/api/groups/${gAlpha.id}/tokens`, opts({ tokenId: tGamma.id }));
-      await fetch(`${base}/api/groups/${gBeta.id}/tokens`,  opts({ tokenId: tGamma.id }));
+      await fetch(`${base}/api/groups/${gAlpha.id}/tokens`, { ...p, body: JSON.stringify({ tokenId: tAlpha.id }) });
+      await fetch(`${base}/api/groups/${gBeta.id}/tokens`,  { ...p, body: JSON.stringify({ tokenId: tBeta.id }) });
+      await fetch(`${base}/api/groups/${gAlpha.id}/tokens`, { ...p, body: JSON.stringify({ tokenId: tGamma.id }) });
+      await fetch(`${base}/api/groups/${gBeta.id}/tokens`,  { ...p, body: JSON.stringify({ tokenId: tGamma.id }) });
 
       return {
         ok: !!(tAlpha.id && tBeta.id && tGamma.id && alice.inviteUrl && bob.inviteUrl),
-        inviteAlice: alice.inviteUrl as string,
-        inviteBob: bob.inviteUrl as string,
+        inviteAlice: alice.inviteUrl,
+        inviteBob: bob.inviteUrl,
       };
     }, BASE);
     assert(res.ok, 'Failed to create test resources');
