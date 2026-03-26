@@ -280,7 +280,136 @@ async function main() {
   });
 
   // -----------------------------------------------------------------------
-  // 7. Proxy ACLs
+  // 7. Group-based token visibility
+  // -----------------------------------------------------------------------
+  console.log('\n--- Group-Based Token Visibility ---');
+
+  // Shared state populated by the setup check
+  let visSetup: {
+    tokenNames: { alpha: string; beta: string; gamma: string };
+    inviteTokenAlice: string;
+    inviteTokenBob: string;
+  } | undefined;
+
+  await check('Visibility: admin creates tokens, groups, users', async () => {
+    const res = await page.evaluate(async (base) => {
+      const post = (url: string, body: unknown) =>
+        fetch(`${base}${url}`, {
+          method: 'POST', credentials: 'include',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+        }).then((r) => r.json());
+
+      // Create 3 tokens
+      const tAlpha = await post('/api/tokens', { name: 'Alpha Key', provider: 'alpha', realToken: 'sk-alpha' });
+      const tBeta  = await post('/api/tokens', { name: 'Beta Key',  provider: 'beta',  realToken: 'sk-beta' });
+      const tGamma = await post('/api/tokens', { name: 'Gamma Key', provider: 'gamma', realToken: 'sk-gamma' });
+
+      // Create 2 groups
+      const gAlpha = await post('/api/groups', { name: 'Alpha Team', description: 'Alpha' });
+      const gBeta  = await post('/api/groups', { name: 'Beta Team',  description: 'Beta' });
+
+      // Create 2 manager users (need manager role to list tokens)
+      const alice = await post('/api/users', { username: 'alice', displayName: 'Alice', role: 'manager' });
+      const bob   = await post('/api/users', { username: 'bob',   displayName: 'Bob',   role: 'manager' });
+
+      // Add users to groups
+      await post(`/api/groups/${gAlpha.id}/members`, { userId: alice.id });
+      await post(`/api/groups/${gBeta.id}/members`,  { userId: bob.id });
+
+      // Grant tokens to groups: Alpha→AlphaTeam, Beta→BetaTeam, Gamma→both
+      await post(`/api/groups/${gAlpha.id}/tokens`, { tokenId: tAlpha.id });
+      await post(`/api/groups/${gBeta.id}/tokens`,  { tokenId: tBeta.id });
+      await post(`/api/groups/${gAlpha.id}/tokens`, { tokenId: tGamma.id });
+      await post(`/api/groups/${gBeta.id}/tokens`,  { tokenId: tGamma.id });
+
+      return {
+        ok: !!(tAlpha.id && tBeta.id && tGamma.id && alice.inviteUrl && bob.inviteUrl),
+        inviteAlice: alice.inviteUrl as string,
+        inviteBob: bob.inviteUrl as string,
+      };
+    }, BASE);
+    assert(res.ok, 'Failed to create test resources');
+
+    visSetup = {
+      tokenNames: { alpha: 'Alpha Key', beta: 'Beta Key', gamma: 'Gamma Key' },
+      inviteTokenAlice: res.inviteAlice.split('/invite/')[1],
+      inviteTokenBob: res.inviteBob.split('/invite/')[1],
+    };
+  });
+
+  await check('Visibility: Alice sees Alpha + Gamma, not Beta', async () => {
+    assert(visSetup !== undefined, 'Setup did not complete');
+
+    // Save admin cookies
+    const adminCookies = await page.cookies();
+
+    // Accept Alice's invite (sets her session cookie)
+    const accept = await page.evaluate(async (base, token) => {
+      const r = await fetch(`${base}/api/invite/${token}/accept`, {
+        method: 'POST', credentials: 'include',
+      });
+      return r.status;
+    }, BASE, visSetup!.inviteTokenAlice);
+    assert(accept === 200, `Invite accept failed: ${accept}`);
+
+    // List tokens as Alice
+    const tokens = await page.evaluate(async (base) => {
+      const r = await fetch(`${base}/api/tokens`, { credentials: 'include' });
+      const data = await r.json();
+      return (data.tokens ?? []).map((t: any) => t.name);
+    }, BASE);
+
+    assert(tokens.includes('Alpha Key'), `Alice missing Alpha Key. Sees: ${tokens.join(', ')}`);
+    assert(tokens.includes('Gamma Key'), `Alice missing Gamma Key. Sees: ${tokens.join(', ')}`);
+    assert(!tokens.includes('Beta Key'), `Alice should not see Beta Key. Sees: ${tokens.join(', ')}`);
+
+    // Restore admin session
+    await page.deleteCookie(...adminCookies.map((c) => ({ name: c.name, domain: c.domain })));
+    for (const c of adminCookies) await page.setCookie(c);
+  });
+
+  await check('Visibility: Bob sees Beta + Gamma, not Alpha', async () => {
+    assert(visSetup !== undefined, 'Setup did not complete');
+
+    const adminCookies = await page.cookies();
+
+    const accept = await page.evaluate(async (base, token) => {
+      const r = await fetch(`${base}/api/invite/${token}/accept`, {
+        method: 'POST', credentials: 'include',
+      });
+      return r.status;
+    }, BASE, visSetup!.inviteTokenBob);
+    assert(accept === 200, `Invite accept failed: ${accept}`);
+
+    const tokens = await page.evaluate(async (base) => {
+      const r = await fetch(`${base}/api/tokens`, { credentials: 'include' });
+      const data = await r.json();
+      return (data.tokens ?? []).map((t: any) => t.name);
+    }, BASE);
+
+    assert(tokens.includes('Beta Key'), `Bob missing Beta Key. Sees: ${tokens.join(', ')}`);
+    assert(tokens.includes('Gamma Key'), `Bob missing Gamma Key. Sees: ${tokens.join(', ')}`);
+    assert(!tokens.includes('Alpha Key'), `Bob should not see Alpha Key. Sees: ${tokens.join(', ')}`);
+
+    await page.deleteCookie(...adminCookies.map((c) => ({ name: c.name, domain: c.domain })));
+    for (const c of adminCookies) await page.setCookie(c);
+  });
+
+  await check('Visibility: admin sees all tokens', async () => {
+    const tokens = await page.evaluate(async (base) => {
+      const r = await fetch(`${base}/api/tokens`, { credentials: 'include' });
+      const data = await r.json();
+      return (data.tokens ?? []).map((t: any) => t.name);
+    }, BASE);
+
+    assert(tokens.includes('Alpha Key'), `Admin missing Alpha Key`);
+    assert(tokens.includes('Beta Key'), `Admin missing Beta Key`);
+    assert(tokens.includes('Gamma Key'), `Admin missing Gamma Key`);
+  });
+
+  // -----------------------------------------------------------------------
+  // 8. Proxy ACLs
   // -----------------------------------------------------------------------
   console.log('\n--- Proxy ACLs ---');
 

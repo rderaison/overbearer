@@ -43,12 +43,20 @@ export default async function tokenRoutes(fastify: FastifyInstance): Promise<voi
         );
       } else {
         result = await query<TokenRow>(
-          `SELECT t.id, t.name, t.provider, t.fake_token_hash, t.fake_token_value, t.created_by,
+          `SELECT DISTINCT t.id, t.name, t.provider, t.fake_token_hash, t.fake_token_value, t.created_by,
                   t.last_used_at, t.revoked, t.revoked_at, t.created_at, t.updated_at,
                   u.username as creator_username
            FROM token_mappings t
            LEFT JOIN users u ON t.created_by = u.id
            WHERE t.created_by = $1
+              OR t.id IN (
+                SELECT tga.token_id FROM token_group_access tga
+                JOIN group_members gm ON tga.group_id = gm.group_id
+                WHERE gm.user_id = $1
+              )
+              OR t.id IN (
+                SELECT ta.token_id FROM token_access ta WHERE ta.user_id = $1
+              )
            ORDER BY t.created_at DESC`,
           [request.userId],
         );
