@@ -364,4 +364,99 @@ export default async function tokenRoutes(fastify: FastifyInstance): Promise<voi
       }
     },
   );
+
+  /**
+   * POST /api/tokens/:id/access
+   * Grant a user or group access to a token.
+   */
+  fastify.post(
+    '/api/tokens/:id/access',
+    { preHandler: requireRole('manager') },
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      const { id } = request.params as { id: string };
+      const body = request.body as { userId?: string; groupId?: string } | undefined;
+
+      if (body?.userId && body?.groupId) {
+        return reply.code(400).send({ error: 'Specify either userId or groupId, not both' });
+      }
+      if (!body?.userId && !body?.groupId) {
+        return reply.code(400).send({ error: 'userId or groupId is required' });
+      }
+
+      // Verify token exists
+      const tokenCheck = await query<{ id: string }>(
+        'SELECT id FROM token_mappings WHERE id = $1',
+        [id],
+      );
+      if (tokenCheck.rows.length === 0) {
+        return reply.code(404).send({ error: 'Token not found' });
+      }
+
+      if (body.userId) {
+        const userCheck = await query<{ id: string }>('SELECT id FROM users WHERE id = $1', [body.userId]);
+        if (userCheck.rows.length === 0) {
+          return reply.code(404).send({ error: 'User not found' });
+        }
+        await query(
+          `INSERT INTO token_access (user_id, token_id, granted_by)
+           VALUES ($1, $2, $3)
+           ON CONFLICT (user_id, token_id) DO NOTHING`,
+          [body.userId, id, request.userId],
+        );
+      } else {
+        const groupCheck = await query<{ id: string }>('SELECT id FROM groups WHERE id = $1', [body.groupId]);
+        if (groupCheck.rows.length === 0) {
+          return reply.code(404).send({ error: 'Group not found' });
+        }
+        await query(
+          `INSERT INTO token_group_access (group_id, token_id, granted_by)
+           VALUES ($1, $2, $3)
+           ON CONFLICT (group_id, token_id) DO NOTHING`,
+          [body.groupId, id, request.userId],
+        );
+      }
+
+      return reply.code(201).send({ success: true });
+    },
+  );
+
+  /**
+   * DELETE /api/tokens/:id/access/users/:userId
+   * Revoke a user's access to a token.
+   */
+  fastify.delete(
+    '/api/tokens/:id/access/users/:userId',
+    { preHandler: requireRole('manager') },
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      const { id, userId } = request.params as { id: string; userId: string };
+      const result = await query(
+        'DELETE FROM token_access WHERE token_id = $1 AND user_id = $2 RETURNING id',
+        [id, userId],
+      );
+      if (result.rowCount === 0) {
+        return reply.code(404).send({ error: 'Access grant not found' });
+      }
+      return reply.send({ success: true });
+    },
+  );
+
+  /**
+   * DELETE /api/tokens/:id/access/groups/:groupId
+   * Revoke a group's access to a token.
+   */
+  fastify.delete(
+    '/api/tokens/:id/access/groups/:groupId',
+    { preHandler: requireRole('manager') },
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      const { id, groupId } = request.params as { id: string; groupId: string };
+      const result = await query(
+        'DELETE FROM token_group_access WHERE token_id = $1 AND group_id = $2 RETURNING id',
+        [id, groupId],
+      );
+      if (result.rowCount === 0) {
+        return reply.code(404).send({ error: 'Access grant not found' });
+      }
+      return reply.send({ success: true });
+    },
+  );
 }

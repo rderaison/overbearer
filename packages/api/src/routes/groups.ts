@@ -145,23 +145,25 @@ export default async function groupRoutes(fastify: FastifyInstance): Promise<voi
       );
 
       return reply.send({
-        id: group.id,
-        name: group.name,
-        description: group.description,
-        createdBy: group.created_by,
-        createdAt: group.created_at,
-        updatedAt: group.updated_at,
-        members: membersResult.rows.map((m) => ({
-          id: m.id,
-          username: m.username,
-          displayName: m.display_name,
-          role: m.role,
-        })),
-        tokens: tokensResult.rows.map((t) => ({
-          id: t.id,
-          name: t.name,
-          provider: t.provider,
-        })),
+        group: {
+          id: group.id,
+          name: group.name,
+          description: group.description,
+          createdBy: group.created_by,
+          createdAt: group.created_at,
+          updatedAt: group.updated_at,
+          members: membersResult.rows.map((m) => ({
+            id: m.id,
+            username: m.username,
+            displayName: m.display_name,
+            role: m.role,
+          })),
+          tokens: tokensResult.rows.map((t) => ({
+            id: t.id,
+            name: t.name,
+            provider: t.provider,
+          })),
+        },
       });
     },
   );

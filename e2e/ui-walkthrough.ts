@@ -279,6 +279,28 @@ async function main() {
     assert(groups?.some((g: any) => g.name === 'Engineering'), 'Engineering group not found');
   });
 
+  await check('Click group opens detail modal', async () => {
+    pageErrors.length = 0;
+    await page.goto(`${BASE}/groups`, { waitUntil: 'networkidle2' });
+    // Click the first group card
+    await page.waitForSelector('button h3', { timeout: 5000 });
+    const groupName = await page.evaluate(() => {
+      const h3 = document.querySelector('button h3');
+      return h3?.textContent ?? '';
+    });
+    await page.click('button h3');
+    // Wait for the detail modal to appear with the group name
+    await page.waitForFunction(
+      (name: string) => {
+        const modal = document.querySelector('[role="dialog"]');
+        return modal?.textContent?.includes(name);
+      },
+      { timeout: 5000 },
+      groupName,
+    );
+    assert(pageErrors.length === 0, `JS errors on group click: ${pageErrors.join('; ')}`);
+  });
+
   // -----------------------------------------------------------------------
   // 7. Group-based token visibility
   // -----------------------------------------------------------------------
@@ -413,6 +435,57 @@ async function main() {
     assert(tokens.includes('Alpha Key'), `Admin missing Alpha Key`);
     assert(tokens.includes('Beta Key'), `Admin missing Beta Key`);
     assert(tokens.includes('Gamma Key'), `Admin missing Gamma Key`);
+  });
+
+  // -----------------------------------------------------------------------
+  // 7b. Direct user-level token access
+  // -----------------------------------------------------------------------
+  console.log('\n--- Direct User Token Access ---');
+
+  await check('Direct grant: Alice-only token invisible to Bob', async () => {
+    assert(visSetup !== undefined, 'Setup did not complete');
+
+    // Admin creates a token and grants it directly to Alice (user-level, not group)
+    const created = await apiPost('/api/tokens', { name: 'Alice Secret', provider: 'direct', realToken: 'sk-alice-only' });
+    assert(created.id, 'Failed to create Alice Secret token');
+
+    // Get Alice's user ID
+    const usersRes = await page.evaluate(
+      `(async () => {
+        const r = await fetch("${BASE}/api/users", { credentials: "include" });
+        return r.json();
+      })()`,
+    ) as { users: { id: string; username: string }[] };
+    const alice = usersRes.users.find((u) => u.username === 'alice');
+    assert(alice !== undefined, 'Alice user not found');
+
+    // Grant access to Alice via the new token access endpoint
+    const grantRes = await apiPost(`/api/tokens/${created.id}/access`, { userId: alice!.id });
+    assert(grantRes.success === true, `Grant failed: ${JSON.stringify(grantRes)}`);
+
+    // Alice can see it
+    await asUser(visSetup!.inviteTokenAlice, async () => {
+      const tokens: string[] = await page.evaluate(
+        `(async () => {
+          const r = await fetch("${BASE}/api/tokens", { credentials: "include" });
+          const data = await r.json();
+          return (data.tokens || []).map(t => t.name);
+        })()`,
+      );
+      assert(tokens.includes('Alice Secret'), `Alice should see Alice Secret. Sees: ${tokens.join(', ')}`);
+    });
+
+    // Bob cannot see it
+    await asUser(visSetup!.inviteTokenBob, async () => {
+      const tokens: string[] = await page.evaluate(
+        `(async () => {
+          const r = await fetch("${BASE}/api/tokens", { credentials: "include" });
+          const data = await r.json();
+          return (data.tokens || []).map(t => t.name);
+        })()`,
+      );
+      assert(!tokens.includes('Alice Secret'), `Bob should NOT see Alice Secret. Sees: ${tokens.join(', ')}`);
+    });
   });
 
   // -----------------------------------------------------------------------

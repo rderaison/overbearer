@@ -247,6 +247,18 @@ export const tokens = {
   rotate(id: string, data: { realToken: string }) {
     return post<Token>(`/api/tokens/${id}/rotate`, data);
   },
+
+  grantAccess(tokenId: string, target: { userId?: string; groupId?: string }) {
+    return post<void>(`/api/tokens/${tokenId}/access`, target);
+  },
+
+  revokeUserAccess(tokenId: string, userId: string) {
+    return del<void>(`/api/tokens/${tokenId}/access/users/${userId}`);
+  },
+
+  revokeGroupAccess(tokenId: string, groupId: string) {
+    return del<void>(`/api/tokens/${tokenId}/access/groups/${groupId}`);
+  },
 };
 
 // ---------------------------------------------------------------------------

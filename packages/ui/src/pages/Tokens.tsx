@@ -1,7 +1,15 @@
 import { useEffect, useState, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Plus, Copy, RotateCw, Ban, Search } from 'lucide-react';
-import { tokens, type Token, type TokenCreateResult } from '../lib/api';
+import { Plus, Copy, RotateCw, Ban, Search, X, UserPlus, UsersRound } from 'lucide-react';
+import {
+  tokens,
+  users as usersApi,
+  groups as groupsApi,
+  type Token,
+  type TokenCreateResult,
+  type User,
+  type Group,
+} from '../lib/api';
 import { DataTable, type Column } from '../components/DataTable';
 import { StatusBadge } from '../components/StatusBadge';
 import { Modal } from '../components/Modal';
@@ -255,6 +263,13 @@ export function Tokens() {
   const [revokeTarget, setRevokeTarget] = useState<Token | null>(null);
   const [revoking, setRevoking] = useState(false);
 
+  // detail / access management modal
+  const [detailToken, setDetailToken] = useState<Token | null>(null);
+  const [allUsers, setAllUsers] = useState<User[]>([]);
+  const [allGroups, setAllGroups] = useState<Group[]>([]);
+  const [addUserOpen, setAddUserOpen] = useState(false);
+  const [addGroupOpen, setAddGroupOpen] = useState(false);
+
   const load = useCallback(async () => {
     try {
       const res = await tokens.list();
@@ -284,6 +299,86 @@ export function Tokens() {
       setRevoking(false);
     }
   };
+
+  // --- Detail / Access Management ---
+  const openDetail = async (token: Token) => {
+    setDetailToken(token);
+    setAddUserOpen(false);
+    setAddGroupOpen(false);
+    try {
+      const [u, g] = await Promise.all([usersApi.list(), groupsApi.list()]);
+      setAllUsers(u.users);
+      setAllGroups(g.groups);
+    } catch {
+      // dropdown data unavailable — non-critical
+    }
+  };
+
+  const closeDetail = () => {
+    setDetailToken(null);
+    setAddUserOpen(false);
+    setAddGroupOpen(false);
+  };
+
+  const refreshDetail = async () => {
+    const res = await tokens.list();
+    setData(res.tokens);
+    if (detailToken) {
+      const updated = res.tokens.find((t) => t.id === detailToken.id);
+      setDetailToken(updated ?? null);
+    }
+  };
+
+  const handleGrantUser = async (userId: string) => {
+    if (!detailToken) return;
+    try {
+      await tokens.grantAccess(detailToken.id, { userId });
+      notify('success', 'User access granted.');
+      setAddUserOpen(false);
+      refreshDetail();
+    } catch (err: any) {
+      notify('error', err?.message ?? 'Failed to grant access.');
+    }
+  };
+
+  const handleGrantGroup = async (groupId: string) => {
+    if (!detailToken) return;
+    try {
+      await tokens.grantAccess(detailToken.id, { groupId });
+      notify('success', 'Group access granted.');
+      setAddGroupOpen(false);
+      refreshDetail();
+    } catch (err: any) {
+      notify('error', err?.message ?? 'Failed to grant access.');
+    }
+  };
+
+  const handleRevokeUser = async (userId: string) => {
+    if (!detailToken) return;
+    try {
+      await tokens.revokeUserAccess(detailToken.id, userId);
+      notify('success', 'User access revoked.');
+      refreshDetail();
+    } catch (err: any) {
+      notify('error', err?.message ?? 'Failed to revoke access.');
+    }
+  };
+
+  const handleRevokeGroup = async (groupId: string) => {
+    if (!detailToken) return;
+    try {
+      await tokens.revokeGroupAccess(detailToken.id, groupId);
+      notify('success', 'Group access revoked.');
+      refreshDetail();
+    } catch (err: any) {
+      notify('error', err?.message ?? 'Failed to revoke access.');
+    }
+  };
+
+  const accessUsers = detailToken?.accessibleBy?.users ?? [];
+  const accessGroups = detailToken?.accessibleBy?.groups ?? [];
+  const availableUsers = allUsers.filter((u) => !accessUsers.some((au) => au.id === u.id));
+  const availableGroups = allGroups.filter((g) => !accessGroups.some((ag) => ag.id === g.id));
 
   const filtered = data.filter(
     (t: any) =>
@@ -464,6 +559,7 @@ export function Tokens() {
         rowKey={(t) => t.id}
         loading={loading}
         emptyMessage="No tokens found."
+        onRowClick={(t) => openDetail(t)}
       />
 
       {/* Modals */}
@@ -498,6 +594,185 @@ export function Tokens() {
         confirmLabel="Revoke"
         loading={revoking}
       />
+
+      {/* Token Detail / Access Management Modal */}
+      <Modal
+        open={detailToken !== null}
+        onClose={closeDetail}
+        title={detailToken?.name ?? ''}
+        size="lg"
+      >
+        {detailToken && (
+          <div className="space-y-6">
+            {/* Token info */}
+            <div className="flex flex-wrap items-center gap-3">
+              {detailToken.provider && (
+                <span className="inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium bg-slate-200 dark:bg-zinc-700 text-slate-600 dark:text-zinc-400">
+                  {detailToken.provider}
+                </span>
+              )}
+              <StatusBadge status={detailToken.status} />
+              <span className="text-xs text-slate-400 dark:text-zinc-600">
+                Created by {detailToken.createdBy} on{' '}
+                {new Date(detailToken.createdAt).toLocaleDateString()}
+              </span>
+            </div>
+
+            {detailToken.fakeToken && (
+              <div className="relative">
+                <code className="block w-full rounded-lg bg-slate-100 dark:bg-zinc-800 p-3 text-xs font-mono text-slate-800 dark:text-zinc-200 break-all select-all">
+                  {detailToken.fakeToken}
+                </code>
+                <button
+                  onClick={() => {
+                    navigator.clipboard.writeText(detailToken.fakeToken);
+                    notify('success', 'Copied to clipboard.');
+                  }}
+                  className="absolute top-2 right-2 btn-ghost p-1.5 rounded-md"
+                  title="Copy fake token"
+                >
+                  <Copy className="h-4 w-4" />
+                </button>
+              </div>
+            )}
+
+            {/* Access management */}
+            <div className="grid gap-6 md:grid-cols-2">
+              {/* Users with access */}
+              <div>
+                <div className="flex items-center justify-between mb-3">
+                  <h4 className="text-sm font-semibold text-slate-900 dark:text-zinc-100 flex items-center gap-1.5">
+                    <UserPlus className="h-4 w-4" />
+                    User Access
+                  </h4>
+                  <div className="relative">
+                    <button
+                      className="btn-ghost text-xs p-1.5 rounded-md"
+                      onClick={() => { setAddUserOpen(!addUserOpen); setAddGroupOpen(false); }}
+                      title="Grant user access"
+                    >
+                      <Plus className="h-4 w-4" />
+                    </button>
+                    {addUserOpen && (
+                      <div className="absolute right-0 top-full mt-1 z-10 w-56 rounded-lg bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 shadow-lg max-h-48 overflow-y-auto">
+                        {availableUsers.length === 0 ? (
+                          <p className="text-xs text-slate-500 dark:text-zinc-500 p-3">
+                            No users available to add.
+                          </p>
+                        ) : (
+                          availableUsers.map((u) => (
+                            <button
+                              key={u.id}
+                              className="w-full text-left px-3 py-2 text-sm text-slate-700 dark:text-zinc-300 hover:bg-slate-100 dark:hover:bg-zinc-800"
+                              onClick={() => handleGrantUser(u.id)}
+                            >
+                              {u.username}
+                              {u.displayName && (
+                                <span className="text-slate-400 dark:text-zinc-600 ml-1">
+                                  ({u.displayName})
+                                </span>
+                              )}
+                            </button>
+                          ))
+                        )}
+                      </div>
+                    )}
+                  </div>
+                </div>
+                {accessUsers.length === 0 ? (
+                  <p className="text-xs text-slate-400 dark:text-zinc-600">No user access grants.</p>
+                ) : (
+                  <ul className="space-y-1">
+                    {accessUsers.map((u) => (
+                      <li
+                        key={u.id}
+                        className="flex items-center justify-between rounded-lg px-3 py-2 bg-slate-50 dark:bg-zinc-800/50"
+                      >
+                        <span className="text-sm font-medium text-slate-900 dark:text-zinc-100 truncate">
+                          @{u.username}
+                        </span>
+                        <button
+                          className="btn-ghost p-1 rounded-md text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-500/10 flex-shrink-0"
+                          title="Revoke access"
+                          onClick={() => handleRevokeUser(u.id)}
+                        >
+                          <X className="h-3.5 w-3.5" />
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+
+              {/* Groups with access */}
+              <div>
+                <div className="flex items-center justify-between mb-3">
+                  <h4 className="text-sm font-semibold text-slate-900 dark:text-zinc-100 flex items-center gap-1.5">
+                    <UsersRound className="h-4 w-4" />
+                    Group Access
+                  </h4>
+                  <div className="relative">
+                    <button
+                      className="btn-ghost text-xs p-1.5 rounded-md"
+                      onClick={() => { setAddGroupOpen(!addGroupOpen); setAddUserOpen(false); }}
+                      title="Grant group access"
+                    >
+                      <Plus className="h-4 w-4" />
+                    </button>
+                    {addGroupOpen && (
+                      <div className="absolute right-0 top-full mt-1 z-10 w-56 rounded-lg bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 shadow-lg max-h-48 overflow-y-auto">
+                        {availableGroups.length === 0 ? (
+                          <p className="text-xs text-slate-500 dark:text-zinc-500 p-3">
+                            No groups available to add.
+                          </p>
+                        ) : (
+                          availableGroups.map((g) => (
+                            <button
+                              key={g.id}
+                              className="w-full text-left px-3 py-2 text-sm text-slate-700 dark:text-zinc-300 hover:bg-slate-100 dark:hover:bg-zinc-800"
+                              onClick={() => handleGrantGroup(g.id)}
+                            >
+                              {g.name}
+                              {g.description && (
+                                <span className="text-slate-400 dark:text-zinc-600 ml-1">
+                                  ({g.description})
+                                </span>
+                              )}
+                            </button>
+                          ))
+                        )}
+                      </div>
+                    )}
+                  </div>
+                </div>
+                {accessGroups.length === 0 ? (
+                  <p className="text-xs text-slate-400 dark:text-zinc-600">No group access grants.</p>
+                ) : (
+                  <ul className="space-y-1">
+                    {accessGroups.map((g) => (
+                      <li
+                        key={g.id}
+                        className="flex items-center justify-between rounded-lg px-3 py-2 bg-slate-50 dark:bg-zinc-800/50"
+                      >
+                        <span className="text-sm font-medium text-slate-900 dark:text-zinc-100 truncate">
+                          {g.name}
+                        </span>
+                        <button
+                          className="btn-ghost p-1 rounded-md text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-500/10 flex-shrink-0"
+                          title="Revoke access"
+                          onClick={() => handleRevokeGroup(g.id)}
+                        >
+                          <X className="h-3.5 w-3.5" />
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+      </Modal>
     </div>
   );
 }
