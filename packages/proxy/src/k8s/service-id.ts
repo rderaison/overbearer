@@ -86,6 +86,7 @@ export async function identifyService(
   if (entry) {
     return { name: entry.name, ip: entry.ip };
   }
+  console.warn(`[k8s] IP ${sourceIp} not found in map (${ipMap.size} entries tracked)`);
   return { name: sourceIp, ip: sourceIp };
 }
 
