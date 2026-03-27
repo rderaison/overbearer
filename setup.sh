@@ -432,8 +432,13 @@ build_lb_annotations() {
 # ---------------------------------------------------------------------------
 
 OUTDIR="./generated"
-rm -rf "$OUTDIR"
-mkdir -p "$OUTDIR/storage" "$OUTDIR/deployments" "$OUTDIR/network"
+# mkdir (without -p) is atomic: it fails if the path already exists as a
+# directory, file, or symlink, avoiding a TOCTOU race between check and create.
+if ! mkdir "$OUTDIR" 2>/dev/null; then
+  echo -e "${RED}Error: ${OUTDIR}/ already exists. Remove it first and re-run.${NC}" >&2
+  exit 1
+fi
+mkdir "$OUTDIR/storage" "$OUTDIR/deployments" "$OUTDIR/network"
 
 echo ""
 echo -e "${CYAN}Generating manifests in ${OUTDIR}/...${NC}"
