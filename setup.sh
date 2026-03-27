@@ -20,6 +20,9 @@ echo "  │        OVERBEARER SETUP         │"
 echo "  │   API Token Management Proxy    │"
 echo "  └─────────────────────────────────┘"
 echo -e "${NC}"
+echo -e "  ${DIM}This wizard will generate configuration files for deploying Overbearer.${NC}"
+echo -e "  ${DIM}Nothing will be installed or executed -- only files are created.${NC}"
+echo ""
 
 # ---------------------------------------------------------------------------
 # Helper functions
@@ -76,13 +79,178 @@ show_public_proxy_warning() {
 }
 
 # ---------------------------------------------------------------------------
+# Deployment mode
+# ---------------------------------------------------------------------------
+
+echo -e "${YELLOW}Deployment Mode${NC}"
+echo ""
+echo -e "  ${BOLD}1)${NC} Kubernetes  ${DIM}(generate k8s manifests)${NC}"
+echo -e "  ${BOLD}2)${NC} Docker Compose  ${DIM}(generate docker-compose.yaml)${NC}"
+echo ""
+ask "Select deployment mode" "1" DEPLOY_MODE
+
+# ---------------------------------------------------------------------------
 # Collect configuration: General
 # ---------------------------------------------------------------------------
 
+echo ""
 echo -e "${YELLOW}General${NC}"
-ask "Kubernetes namespace" "overbearer" NAMESPACE
 ask "Container image registry" "ghcr.io/rderaison/overbearer" REGISTRY
 ask "Image tag" "latest" IMAGE_TAG
+
+if [ "$DEPLOY_MODE" = "2" ]; then
+  # -------------------------------------------------------------------------
+  # Docker Compose flow
+  # -------------------------------------------------------------------------
+
+  echo ""
+  echo -e "${YELLOW}Hostnames${NC}"
+  ask "Management UI hostname (for TLS & passkeys)" "localhost" MGMT_HOSTNAME
+  ask "Proxy hostname (optional -- only needed if exposed outside the host)" "" PROXY_HOSTNAME
+
+  echo ""
+  echo -e "${YELLOW}Kafka${NC}"
+  ask_yn "Use Kafka for log shipping? (recommended for production)" "n" USE_KAFKA
+  KAFKA_ENV_PROXY=""
+  if [ "$USE_KAFKA" = "yes" ]; then
+    ask "Kafka broker(s) (comma-separated)" "" KAFKA_BROKERS
+    ask "Kafka topic" "overbearer.proxy-logs" KAFKA_TOPIC
+    KAFKA_ENV_PROXY="      KAFKA_BROKERS: \"${KAFKA_BROKERS}\"
+      KAFKA_TOPIC: \"${KAFKA_TOPIC}\""
+  else
+    KAFKA_ENV_PROXY="      CLICKHOUSE_URL: \"http://clickhouse:8123\"
+      CLICKHOUSE_DATABASE: \"overbearer\""
+  fi
+
+  MASTER_KEY=$(generate_hex 32)
+  JWT_SECRET=$(generate_hex 32)
+  PG_PASSWORD=$(generate_hex 16)
+
+  PROXY_TLS_HOSTNAMES="${PROXY_HOSTNAME}"
+  [ -n "$PROXY_HOSTNAME" ] && PROXY_TLS_HOSTNAMES="${PROXY_HOSTNAME},overbearer-proxy"
+
+  OUTDIR="./generated"
+  if ! mkdir "$OUTDIR" 2>/dev/null; then
+    echo -e "${RED}Error: ${OUTDIR}/ already exists. Remove it first and re-run.${NC}" >&2
+    exit 1
+  fi
+
+  echo ""
+  echo -e "${CYAN}Generating docker-compose.yaml in ${OUTDIR}/...${NC}"
+
+  cat > "$OUTDIR/overbearer.env" <<EOF
+OVERBEARER_MASTER_KEY=${MASTER_KEY}
+OVERBEARER_JWT_SECRET=${JWT_SECRET}
+POSTGRES_USER=overbearer
+POSTGRES_PASSWORD=${PG_PASSWORD}
+POSTGRES_DB=overbearer
+PGUSER=overbearer
+PGPASSWORD=${PG_PASSWORD}
+PGDATABASE=overbearer
+EOF
+
+  cat > "$OUTDIR/docker-compose.yaml" <<EOF
+services:
+  postgres:
+    image: postgres:17-alpine
+    env_file: overbearer.env
+    environment:
+      PGDATA: /var/lib/postgresql/data/pgdata
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U overbearer"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  memcached:
+    image: memcached:1.6-alpine
+    command: ["-m", "128", "-c", "1024"]
+
+  clickhouse:
+    image: clickhouse/clickhouse-server:26.2-alpine
+    volumes:
+      - clickhouse-data:/var/lib/clickhouse
+
+  management:
+    image: ${REGISTRY}/management:${IMAGE_TAG}
+    ports:
+      - "3000:3000"
+      - "3443:3443"
+    env_file: overbearer.env
+    environment:
+      PORT: "3000"
+      TLS_PORT: "3443"
+      PGHOST: postgres
+      MEMCACHED_HOST: "memcached:11211"
+      CLICKHOUSE_URL: "http://clickhouse:8123"
+      CLICKHOUSE_DATABASE: "overbearer"
+      OVERBEARER_RP_ID: "${MGMT_HOSTNAME}"
+      OVERBEARER_ORIGIN: "https://${MGMT_HOSTNAME}"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  proxy:
+    image: ${REGISTRY}/proxy:${IMAGE_TAG}
+    ports:
+      - "8080:8080"
+      - "8443:8443"
+    env_file: overbearer.env
+    environment:
+      PORT: "8080"
+      TLS_PORT: "8443"
+      PROXY_TLS_HOSTNAMES: "${PROXY_TLS_HOSTNAMES}"
+      MEMCACHED_HOST: "memcached:11211"
+${KAFKA_ENV_PROXY}
+      PGHOST: postgres
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+volumes:
+  postgres-data:
+  clickhouse-data:
+EOF
+
+  echo ""
+  echo -e "${GREEN}${BOLD}Generated successfully!${NC}"
+  echo ""
+  echo -e "  ${OUTDIR}/"
+  echo -e "  ├── docker-compose.yaml"
+  echo -e "  └── overbearer.env  ${DIM}(contains encryption keys & passwords)${NC}"
+  echo ""
+  echo -e "${BOLD}To run:${NC}"
+  echo ""
+  echo "  cd ${OUTDIR}"
+  echo "  docker compose up -d"
+  echo ""
+  echo -e "${BOLD}After startup:${NC}"
+  echo ""
+  echo "  1. Open https://${MGMT_HOSTNAME}:3443/ and create your admin account"
+  echo "  2. Create token mappings and configure your services"
+  echo ""
+  echo -e "${BOLD}Configure services to use the proxy:${NC}"
+  echo ""
+  echo "  HTTPS_PROXY=https://${PROXY_HOSTNAME:-localhost}:8443"
+  echo "  # or"
+  echo "  HTTP_PROXY=http://${PROXY_HOSTNAME:-localhost}:8080"
+  echo ""
+  echo -e "${RED}${BOLD}IMPORTANT:${NC} ${OUTDIR}/overbearer.env contains your encryption keys."
+  echo "  Back it up securely and do not commit it to version control."
+  echo ""
+  echo -e "${DIM}Master Key: ${MASTER_KEY}${NC}"
+  echo -e "${DIM}JWT Secret: ${JWT_SECRET}${NC}"
+  echo ""
+  exit 0
+fi
+
+# ==========================================================================
+# Kubernetes flow (continues below)
+# ==========================================================================
+
+ask "Kubernetes namespace" "overbearer" NAMESPACE
 
 IMAGE_PULL_SECRET=""
 REGISTRY_HOST="${REGISTRY%%/*}"
