@@ -548,6 +548,9 @@ spec:
           image: postgres:17-alpine
           ports:
             - containerPort: 5432
+          env:
+            - name: PGDATA
+              value: /var/lib/postgresql/data/pgdata
           envFrom:
             - secretRef:
                 name: postgres-credentials
