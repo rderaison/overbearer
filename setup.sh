@@ -139,7 +139,6 @@ case "$K8S_PLATFORM" in
   4)  # DOKS
     K8S_FLAVOR="doks"
     DEFAULT_STORAGE_CLASS="do-block-storage"
-    SUPPORTS_INTERNAL_LB="no"
     ;;
   5)  # LKE
     K8S_FLAVOR="lke"
@@ -157,11 +156,11 @@ case "$K8S_PLATFORM" in
   8)  # OVH
     K8S_FLAVOR="ovh"
     DEFAULT_STORAGE_CLASS="csi-cinder-high-speed"
-    SUPPORTS_INTERNAL_LB="no"
     ;;
   9)  # Vultr
     K8S_FLAVOR="vultr"
     DEFAULT_STORAGE_CLASS="vultr-block-storage-hdd"
+    SUPPORTS_INTERNAL_LB="no"
     ;;
   10) # Bare Metal
     K8S_FLAVOR="baremetal"
@@ -357,10 +356,12 @@ build_lb_annotations() {
     eks)
       if [ "$scope" = "internal" ]; then
         annotations="    service.beta.kubernetes.io/aws-load-balancer-scheme: internal
-    service.beta.kubernetes.io/aws-load-balancer-type: nlb"
+    service.beta.kubernetes.io/aws-load-balancer-type: external
+    service.beta.kubernetes.io/aws-load-balancer-nlb-target-type: ip"
       else
         annotations="    service.beta.kubernetes.io/aws-load-balancer-scheme: internet-facing
-    service.beta.kubernetes.io/aws-load-balancer-type: nlb"
+    service.beta.kubernetes.io/aws-load-balancer-type: external
+    service.beta.kubernetes.io/aws-load-balancer-nlb-target-type: ip"
       fi
       ;;
     aks)
@@ -370,36 +371,35 @@ build_lb_annotations() {
       [ -n "$static_ip" ] && lb_ip_field="  loadBalancerIP: ${static_ip}"
       ;;
     doks)
-      # DigitalOcean does not support internal LBs natively
       annotations="    service.beta.kubernetes.io/do-loadbalancer-size-unit: \"1\"
     service.beta.kubernetes.io/do-loadbalancer-disable-lets-encrypt-dns-records: \"true\""
+      if [ "$scope" = "internal" ]; then
+        annotations="${annotations}
+    service.beta.kubernetes.io/do-loadbalancer-type: \"REGIONAL\"
+    service.beta.kubernetes.io/do-loadbalancer-network: \"INTERNAL\""
+      fi
       ;;
     lke)
       annotations="    service.beta.kubernetes.io/linode-loadbalancer-throttle: \"20\""
       ;;
     hetzner)
       if [ "$scope" = "internal" ]; then
-        annotations="    load-balancer.hetzner.cloud/use-private-ip: \"true\""
-      fi
-      if [ -n "$static_ip" ]; then
-        annotations="${annotations:+${annotations}
-}    load-balancer.hetzner.cloud/ipv4: \"${static_ip}\""
+        annotations="    load-balancer.hetzner.cloud/disable-public-network: \"true\"
+    load-balancer.hetzner.cloud/use-private-ip: \"true\""
       fi
       ;;
     scaleway)
       if [ "$scope" = "internal" ]; then
-        annotations="    service.beta.kubernetes.io/scw-loadbalancer-type: inner"
+        annotations="    service.beta.kubernetes.io/scw-loadbalancer-private: \"true\""
       fi
       ;;
     ovh)
-      # OVH has limited internal LB support
-      [ -n "$static_ip" ] && lb_ip_field="  loadBalancerIP: ${static_ip}"
+      if [ "$scope" = "internal" ]; then
+        annotations="    service.beta.kubernetes.io/openstack-internal-load-balancer: \"true\""
+      fi
       ;;
     vultr)
-      if [ "$scope" = "internal" ]; then
-        annotations="    service.beta.kubernetes.io/vultr-loadbalancer-private-network: \"true\""
-      fi
-      [ -n "$static_ip" ] && lb_ip_field="  loadBalancerIP: ${static_ip}"
+      annotations="    service.beta.kubernetes.io/vultr-loadbalancer-vpc: \"true\""
       ;;
     baremetal)
       if [ -n "$static_ip" ]; then
