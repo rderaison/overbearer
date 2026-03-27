@@ -184,7 +184,7 @@ esac
 echo ""
 echo -e "${YELLOW}Hostnames${NC}"
 ask "Management UI hostname (for TLS & passkeys)" "" MGMT_HOSTNAME
-ask "Proxy hostname" "" PROXY_HOSTNAME
+ask "Proxy hostname (optional -- only needed if exposed outside the cluster)" "" PROXY_HOSTNAME
 
 # --- Optional custom TLS certificate for management UI ---
 echo ""
@@ -267,11 +267,12 @@ if [ "$USE_LB" = "yes" ]; then
       *) PROXY_LB_SCOPE="internal" ;;
     esac
   else
-    echo -e "  ${DIM}Note: ${K8S_FLAVOR} does not support native internal load balancers.${NC}"
+    echo ""
+    echo -e "  ${DIM}Note: ${K8S_FLAVOR} does not support internal load balancers.${NC}"
+    echo -e "  ${DIM}The proxy load balancer will receive a public IP.${NC}"
+    echo -e "  ${DIM}Use firewall rules to restrict access to known IP ranges.${NC}"
     PROXY_LB_SCOPE="external"
     PROXY_IS_PUBLIC="yes"
-    show_public_proxy_warning
-    [ "$PROXY_LB_SCOPE" = "internal" ] && PROXY_IS_PUBLIC="no"
   fi
 
   # --- Static IPs for bare metal / k3s ---
@@ -307,7 +308,7 @@ fi
 
 echo ""
 echo -e "${YELLOW}Kafka${NC}"
-ask_yn "Use Kafka for log shipping? (recommended for production)" "y" USE_KAFKA
+ask_yn "Use Kafka for log shipping? (recommended for production)" "n" USE_KAFKA
 KAFKA_BROKERS=""
 KAFKA_TOPIC="overbearer.proxy-logs"
 if [ "$USE_KAFKA" = "yes" ]; then
