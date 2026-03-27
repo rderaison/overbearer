@@ -1,5 +1,6 @@
 FROM node:22-alpine AS api-builder
 WORKDIR /app
+ENV SOCKET_CLI_VIEW_ALL_RISKS=1
 RUN npm install -g @socketsecurity/cli
 COPY packages/api/package.json ./
 RUN socket npm install
@@ -9,6 +10,7 @@ RUN npx tsc
 
 FROM node:22-alpine AS ui-builder
 WORKDIR /app
+ENV SOCKET_CLI_VIEW_ALL_RISKS=1
 RUN npm install -g @socketsecurity/cli
 COPY packages/ui/package.json ./
 RUN socket npm install
@@ -19,6 +21,7 @@ RUN npx vite build
 FROM node:22-alpine
 WORKDIR /app
 RUN apk add --no-cache tini
+ENV SOCKET_CLI_VIEW_ALL_RISKS=1
 RUN npm install -g @socketsecurity/cli
 COPY packages/api/package.json ./
 RUN socket npm install --omit=dev
