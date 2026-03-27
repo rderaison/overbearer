@@ -30,7 +30,7 @@ This manual walks through every view in the management console.
 
 ### Login
 
-![Login page](docs/screenshots/login.png)
+![Login page](docs/screenshots/login.jpg)
 
 Overbearer uses **WebAuthn passkeys** exclusively -- there are no passwords. The login screen presents a single "Sign in with Passkey" button that triggers your browser's built-in passkey dialog (Touch ID, Windows Hello, hardware security key, etc.).
 
@@ -63,11 +63,11 @@ The sidebar adapts to show only the pages available to the current user's role. 
 
 | Admin view | Manager view |
 |---|---|
-| ![Admin dashboard](docs/screenshots/admin-dashboard.png) | ![Manager dashboard](docs/screenshots/manager-dashboard.png) |
+| ![Admin dashboard](docs/screenshots/admin-dashboard.jpg) | ![Manager dashboard](docs/screenshots/manager-dashboard.jpg) |
 
 | Viewer view | Requester view |
 |---|---|
-| ![Viewer dashboard](docs/screenshots/viewer-dashboard.png) | ![Requester dashboard](docs/screenshots/requester-dashboard.png) |
+| ![Viewer dashboard](docs/screenshots/viewer-dashboard.jpg) | ![Requester dashboard](docs/screenshots/requester-dashboard.jpg) |
 
 The dashboard provides a quick overview of the deployment through four **stat cards**:
 
@@ -105,7 +105,7 @@ Each entry shows the originating service, the HTTP method and path, and the time
 
 | Admin view | Manager view |
 |---|---|
-| ![Admin tokens](docs/screenshots/admin-tokens.png) | ![Manager tokens](docs/screenshots/manager-tokens.png) |
+| ![Admin tokens](docs/screenshots/admin-tokens.jpg) | ![Manager tokens](docs/screenshots/manager-tokens.jpg) |
 
 The Tokens page is the core of Overbearer's secret management. It displays a sortable, searchable table of all token mappings visible to the current user.
 
@@ -141,7 +141,7 @@ After creation, a second modal displays the generated **fake token**. This fake 
 
 ### Token Detail & Access Management
 
-![Token detail modal](docs/screenshots/admin-token-access.png)
+![Token detail modal](docs/screenshots/admin-token-access.jpg)
 
 Clicking any row in the token table opens a **detail modal** showing:
 
@@ -173,7 +173,7 @@ The search bar above the table filters tokens by name or provider in real time.
 
 | Admin view | Manager view | Requester view |
 |---|---|---|
-| ![Admin token requests](docs/screenshots/admin-token-requests.png) | ![Manager token requests](docs/screenshots/manager-token-requests.png) | ![Requester token requests](docs/screenshots/requester-token-requests.png) |
+| ![Admin token requests](docs/screenshots/admin-token-requests.jpg) | ![Manager token requests](docs/screenshots/manager-token-requests.jpg) | ![Requester token requests](docs/screenshots/requester-token-requests.jpg) |
 
 The Token Requests page implements a self-service workflow. Users who don't have direct token access can request it, and managers approve or deny.
 
@@ -214,7 +214,7 @@ Pending requests show two action buttons:
 
 | Admin view | Viewer view |
 |---|---|
-| ![Admin logs](docs/screenshots/admin-logs.png) | ![Viewer logs](docs/screenshots/viewer-logs.png) |
+| ![Admin logs](docs/screenshots/admin-logs.jpg) | ![Viewer logs](docs/screenshots/viewer-logs.jpg) |
 
 The Logs page is a real-time viewer for every HTTP request that flows through the Overbearer proxy. Log data is stored in ClickHouse and supports high-volume time-series queries.
 
@@ -258,7 +258,7 @@ Toggle the **"Auto-refresh"** checkbox to poll for new log entries every 5 secon
 
 | Admin view | Viewer view |
 |---|---|
-| ![Admin services](docs/screenshots/admin-services.png) | ![Viewer services](docs/screenshots/viewer-services.png) |
+| ![Admin services](docs/screenshots/admin-services.jpg) | ![Viewer services](docs/screenshots/viewer-services.jpg) |
 
 The Services page highlights a critical security concern: **services that are sending real API tokens directly** through the proxy instead of using fake tokens. These are services that haven't been onboarded to Overbearer yet.
 
@@ -289,7 +289,7 @@ This lets you onboard unprotected services without ever asking the service owner
 
 | Admin view | Viewer view |
 |---|---|
-| ![Admin new activity](docs/screenshots/admin-new-activity.png) | ![Viewer new activity](docs/screenshots/viewer-new-activity.png) |
+| ![Admin new activity](docs/screenshots/admin-new-activity.jpg) | ![Viewer new activity](docs/screenshots/viewer-new-activity.jpg) |
 
 The New Activity page surfaces **new service-token associations** -- cases where a service started using a token it has never used before. This is an anomaly-detection view useful for spotting:
 
@@ -313,7 +313,7 @@ The lookback window defaults to 24 hours. When no new associations are detected,
 
 **Minimum role:** Admin
 
-![Admin users](docs/screenshots/admin-users.png)
+![Admin users](docs/screenshots/admin-users.jpg)
 
 The Users page lets admins manage accounts and their roles. The table shows:
 
@@ -341,7 +341,7 @@ Clicking **"Create & Generate Invite"** creates the user account and generates a
 
 **Minimum role:** Admin
 
-![Admin groups](docs/screenshots/admin-groups.png)
+![Admin groups](docs/screenshots/admin-groups.jpg)
 
 Groups let you organize users into teams and manage token access in bulk. Each group is displayed as a card showing:
 
@@ -356,7 +356,7 @@ Click **"+ Create Group"** and provide a name and optional description.
 
 ### Group Detail
 
-![Group detail modal](docs/screenshots/admin-group-detail.png)
+![Group detail modal](docs/screenshots/admin-group-detail.jpg)
 
 Click any group card to open the **detail modal**. The modal has two sections side by side:
 
@@ -381,7 +381,7 @@ For example, if the "Platform Engineering" group has 4 members and access to 6 t
 
 **Minimum role:** Admin
 
-![Admin settings](docs/screenshots/admin-settings.png)
+![Admin settings](docs/screenshots/admin-settings.jpg)
 
 The Settings page has four sections:
 

@@ -805,10 +805,12 @@ async function takeScreenshots(usersByRole: Record<string, string>): Promise<voi
   await page.goto(`${MGMT_URL}/login`, { waitUntil: 'networkidle2' });
   await delay(1000);
   await page.screenshot({
-    path: `${DOCS_DIR}/screenshots/login.png`,
+    path: `${DOCS_DIR}/screenshots/login.jpg`,
+    type: 'jpeg',
+    quality: 90,
     fullPage: true,
   });
-  console.log('    login.png');
+  console.log('    login.jpg');
 
   // For each role, set the JWT cookie and screenshot all visible pages
   for (const [role, userId] of Object.entries(usersByRole)) {
@@ -837,9 +839,11 @@ async function takeScreenshots(usersByRole: Record<string, string>): Promise<voi
         // Wait for content to render
         await delay(2000);
 
-        const filename = `${role}-${name}.png`;
+        const filename = `${role}-${name}.jpg`;
         await page.screenshot({
           path: `${DOCS_DIR}/screenshots/${filename}`,
+          type: 'jpeg',
+          quality: 90,
           fullPage: true,
         });
         console.log(`    ${filename}`);
@@ -861,10 +865,12 @@ async function takeScreenshots(usersByRole: Record<string, string>): Promise<voi
         await page.waitForSelector('[role="dialog"]', { timeout: 5000 });
         await delay(1000);
         await page.screenshot({
-          path: `${DOCS_DIR}/screenshots/admin-group-detail.png`,
+          path: `${DOCS_DIR}/screenshots/admin-group-detail.jpg`,
+          type: 'jpeg',
+          quality: 90,
           fullPage: true,
         });
-        console.log('    admin-group-detail.png');
+        console.log('    admin-group-detail.jpg');
       } catch (err) {
         console.error(`    FAILED: admin-group-detail: ${(err as Error).message}`);
       }
@@ -879,10 +885,12 @@ async function takeScreenshots(usersByRole: Record<string, string>): Promise<voi
         await page.waitForSelector('[role="dialog"]', { timeout: 5000 });
         await delay(1000);
         await page.screenshot({
-          path: `${DOCS_DIR}/screenshots/admin-token-access.png`,
+          path: `${DOCS_DIR}/screenshots/admin-token-access.jpg`,
+          type: 'jpeg',
+          quality: 90,
           fullPage: true,
         });
-        console.log('    admin-token-access.png');
+        console.log('    admin-token-access.jpg');
       } catch (err) {
         console.error(`    FAILED: admin-token-access: ${(err as Error).message}`);
       }

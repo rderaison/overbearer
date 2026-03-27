@@ -22,7 +22,7 @@ Overbearer is a transparent MiTM proxy that sits between your services and the A
 - Full audit trail of which service used which token, when
 
 <p align="center">
-  <img src="docs/screenshots/admin-dashboard.png" alt="Overbearer Dashboard" width="720">
+  <img src="docs/screenshots/admin-dashboard.jpg" alt="Overbearer Dashboard" width="720">
 </p>
 
 ## How
@@ -44,7 +44,7 @@ Overbearer performs TLS interception using a private Certificate Authority that 
 - **Encrypted at rest**: Real tokens are AES-256-GCM encrypted in PostgreSQL and in memcached
 
 <p align="center">
-  <img src="docs/screenshots/admin-logs.png" alt="Overbearer Proxy Logs" width="720">
+  <img src="docs/screenshots/admin-logs.jpg" alt="Overbearer Proxy Logs" width="720">
 </p>
 
 ---
