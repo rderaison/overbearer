@@ -13,48 +13,72 @@ pipeline {
         REGISTRY_CREDS_ID  = "${params.OVERBEARER_REGISTRY_CREDS}"
         IMAGE_TAG          = "${params.IMAGE_TAG ?: ((env.BRANCH_NAME ?: 'main') == 'main' ? 'latest' : env.BRANCH_NAME + '-' + env.BUILD_NUMBER)}"
         DOCKER_API_VERSION = '1.43'
+        BUILDX_PLATFORMS   = 'linux/amd64,linux/arm64'
     }
 
     stages {
-        stage('Build Images') {
-            parallel {
-                stage('Proxy Image') {
-                    steps {
-                        sh "docker build -f Dockerfile.proxy -t ${REGISTRY}/proxy:${IMAGE_TAG} ."
-                    }
-                }
-                stage('Management Image') {
-                    steps {
-                        sh "docker build -f Dockerfile.api -t ${REGISTRY}/management:${IMAGE_TAG} ."
-                    }
-                }
+        stage('Setup Buildx') {
+            steps {
+                sh '''
+                    docker buildx create --name multiarch --use --bootstrap 2>/dev/null || \
+                    docker buildx use multiarch
+                '''
             }
         }
 
-        stage('Push Images') {
+        stage('Registry Login') {
             steps {
                 script {
                     def registryHost = REGISTRY.split('/')[0]
                     if (REGISTRY_CREDS_ID == 'DOCKER_SECLIO_REGISTRY') {
-                        // File-based docker config (same as Jenkinsfile.e2e)
                         withCredentials([file(credentialsId: REGISTRY_CREDS_ID, variable: 'DOCKER_CONFIG_FILE')]) {
                             sh "mkdir -p \$HOME/.docker && cp \$DOCKER_CONFIG_FILE \$HOME/.docker/config.json"
                         }
                     } else {
-                        // Username/password credentials (e.g. GHCR)
                         withCredentials([usernamePassword(credentialsId: REGISTRY_CREDS_ID, usernameVariable: 'USER', passwordVariable: 'TOKEN')]) {
                             sh "echo \$TOKEN | docker login ${registryHost} -u \$USER --password-stdin"
                         }
                     }
                 }
-                sh "docker push ${REGISTRY}/proxy:${IMAGE_TAG}"
-                sh "docker push ${REGISTRY}/management:${IMAGE_TAG}"
-                script {
-                    if (params.TAG_AS_LATEST && IMAGE_TAG != 'latest') {
-                        sh "docker tag ${REGISTRY}/proxy:${IMAGE_TAG} ${REGISTRY}/proxy:latest"
-                        sh "docker tag ${REGISTRY}/management:${IMAGE_TAG} ${REGISTRY}/management:latest"
-                        sh "docker push ${REGISTRY}/proxy:latest"
-                        sh "docker push ${REGISTRY}/management:latest"
+            }
+        }
+
+        stage('Build & Push Images') {
+            parallel {
+                stage('Proxy Image') {
+                    steps {
+                        script {
+                            def tags = "--tag ${REGISTRY}/proxy:${IMAGE_TAG}"
+                            if (params.TAG_AS_LATEST && IMAGE_TAG != 'latest') {
+                                tags += " --tag ${REGISTRY}/proxy:latest"
+                            }
+                            sh """
+                                docker buildx build \
+                                    --platform ${BUILDX_PLATFORMS} \
+                                    -f Dockerfile.proxy \
+                                    ${tags} \
+                                    --push \
+                                    .
+                            """
+                        }
+                    }
+                }
+                stage('Management Image') {
+                    steps {
+                        script {
+                            def tags = "--tag ${REGISTRY}/management:${IMAGE_TAG}"
+                            if (params.TAG_AS_LATEST && IMAGE_TAG != 'latest') {
+                                tags += " --tag ${REGISTRY}/management:latest"
+                            }
+                            sh """
+                                docker buildx build \
+                                    --platform ${BUILDX_PLATFORMS} \
+                                    -f Dockerfile.api \
+                                    ${tags} \
+                                    --push \
+                                    .
+                            """
+                        }
                     }
                 }
             }
@@ -63,7 +87,7 @@ pipeline {
 
     post {
         always {
-            sh 'docker image prune -f --filter="label=overbearer" || true'
+            sh 'docker buildx prune -f --filter="until=24h" || true'
         }
         failure {
             echo 'Build failed!'
