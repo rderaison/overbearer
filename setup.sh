@@ -6,12 +6,6 @@ set -euo pipefail
 # Generates Kubernetes manifests for deploying Overbearer.
 # ============================================================================
 
-# When piped via `curl ... | bash`, stdin is the script itself.
-# Reopen stdin from the terminal so interactive prompts work.
-if [ ! -t 0 ]; then
-  exec < /dev/tty
-fi
-
 BOLD='\033[1m'
 DIM='\033[2m'
 CYAN='\033[0;36m'
@@ -34,17 +28,17 @@ echo -e "${NC}"
 ask() {
   local prompt="$1" default="$2" var="$3"
   if [ -n "$default" ]; then
-    read -rp "$(echo -e "${BOLD}$prompt${NC} ${DIM}[$default]${NC}: ")" input
+    read -rp "$(echo -e "${BOLD}$prompt${NC} ${DIM}[$default]${NC}: ")" input < /dev/tty
     eval "$var=\"${input:-$default}\""
   else
-    read -rp "$(echo -e "${BOLD}$prompt${NC}: ")" input
+    read -rp "$(echo -e "${BOLD}$prompt${NC}: ")" input < /dev/tty
     eval "$var=\"$input\""
   fi
 }
 
 ask_yn() {
   local prompt="$1" default="$2" var="$3"
-  read -rp "$(echo -e "${BOLD}$prompt${NC} ${DIM}[$default]${NC}: ")" input
+  read -rp "$(echo -e "${BOLD}$prompt${NC} ${DIM}[$default]${NC}: ")" input < /dev/tty
   input="${input:-$default}"
   case "$input" in
     [yY]*) eval "$var=yes" ;;
