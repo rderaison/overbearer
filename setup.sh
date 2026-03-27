@@ -122,6 +122,12 @@ if [ "$DEPLOY_MODE" = "2" ]; then
       CLICKHOUSE_DATABASE: \"overbearer\""
   fi
 
+  echo ""
+  echo -e "${YELLOW}Storage${NC}"
+  ask "Data directory (will be created if needed)" "~/.overbearer/data" DATA_DIR
+  DATA_DIR="${DATA_DIR/#\~/$HOME}"
+  mkdir -p "$DATA_DIR"
+
   MASTER_KEY=$(generate_hex 32)
   JWT_SECRET=$(generate_hex 32)
   PG_PASSWORD=$(generate_hex 16)
@@ -157,7 +163,7 @@ services:
     environment:
       PGDATA: /var/lib/postgresql/data/pgdata
     volumes:
-      - postgres-data:/var/lib/postgresql/data
+      - ${DATA_DIR}/postgres:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U overbearer"]
       interval: 5s
@@ -171,7 +177,7 @@ services:
   clickhouse:
     image: clickhouse/clickhouse-server:26.2-alpine
     volumes:
-      - clickhouse-data:/var/lib/clickhouse
+      - ${DATA_DIR}/clickhouse:/var/lib/clickhouse
 
   management:
     image: ${REGISTRY}/management:${IMAGE_TAG}
@@ -209,9 +215,6 @@ ${KAFKA_ENV_PROXY}
       postgres:
         condition: service_healthy
 
-volumes:
-  postgres-data:
-  clickhouse-data:
 EOF
 
   echo ""
