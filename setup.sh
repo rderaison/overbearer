@@ -6,6 +6,12 @@ set -euo pipefail
 # Generates Kubernetes manifests for deploying Overbearer.
 # ============================================================================
 
+# When piped via `curl ... | bash`, stdin is the script itself.
+# Reopen stdin from the terminal so interactive prompts work.
+if [ ! -t 0 ]; then
+  exec < /dev/tty
+fi
+
 BOLD='\033[1m'
 DIM='\033[2m'
 CYAN='\033[0;36m'
