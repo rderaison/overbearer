@@ -1,7 +1,8 @@
 FROM node:22-alpine AS builder
 WORKDIR /app
+RUN npm install -g @socketsecurity/cli
 COPY packages/proxy/package.json ./
-RUN npm install
+RUN socket npm install
 COPY packages/proxy/tsconfig.docker.json ./tsconfig.json
 COPY packages/proxy/src/ src/
 RUN npx tsc
@@ -9,8 +10,9 @@ RUN npx tsc
 FROM node:22-alpine
 WORKDIR /app
 RUN apk add --no-cache tini
+RUN npm install -g @socketsecurity/cli
 COPY packages/proxy/package.json ./
-RUN npm install --omit=dev
+RUN socket npm install --omit=dev
 COPY --from=builder /app/dist/ dist/
 USER node
 ENTRYPOINT ["/sbin/tini", "--"]
